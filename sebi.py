@@ -176,14 +176,40 @@ def load_and_window(data_dir, feature_columns, label_mapping,
 # ═══════════════════════════════════════════════════════════════════════════
 
 class GaitDataset(Dataset):
+    """
+    Parameters
+    ----------
+    features : ndarray (N, W, F)
+    labels   : ndarray (N,)
+    scaler   : fitted sklearn scaler, optional
+        If provided, this scaler is used to *transform* (not fit) the data.
+        If None and ``standardize`` or ``normalize`` is True, a new scaler
+        is fitted on this data and stored in ``self.scaler``.
+    standardize : bool
+        Fit / apply StandardScaler (z-score).
+    normalize : bool
+        Fit / apply MinMaxScaler ([0, 1]).
+    """
+
     def __init__(self, features, labels,
-                 standardize=False, normalize=False):
+                 scaler=None, standardize=False, normalize=False):
         n, w, f = features.shape
         flat = features.reshape(-1, f)
-        if standardize:
-            flat = StandardScaler().fit_transform(flat)
-        if normalize:
-            flat = MinMaxScaler().fit_transform(flat)
+
+        if scaler is not None:
+            flat = scaler.transform(flat)
+            self.scaler = scaler
+        elif standardize:
+            sc = StandardScaler().fit(flat)
+            flat = sc.transform(flat)
+            self.scaler = sc
+        elif normalize:
+            sc = MinMaxScaler().fit(flat)
+            flat = sc.transform(flat)
+            self.scaler = sc
+        else:
+            self.scaler = None
+
         features = flat.reshape(n, w, f)
         self.features = torch.tensor(features, dtype=torch.float32)
         self.labels = torch.tensor(labels, dtype=torch.long)
@@ -193,6 +219,16 @@ class GaitDataset(Dataset):
 
     def __getitem__(self, idx):
         return self.features[idx], self.labels[idx]
+
+
+def compute_class_weights(labels, num_classes):
+    """Return inverse-frequency weights as a float32 tensor (for CrossEntropyLoss)."""
+    counts = np.bincount(labels, minlength=num_classes).astype(np.float64)
+    counts = np.maximum(counts, 1.0)
+    weights = 1.0 / counts
+    weights /= weights.sum()
+    weights *= num_classes
+    return torch.tensor(weights, dtype=torch.float32)
 
 
 # ═══════════════════════════════════════════════════════════════════════════
