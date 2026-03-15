@@ -184,13 +184,18 @@ class GaitDataset(Dataset):
         If None and ``standardize`` or ``normalize`` is True, a new scaler
         is fitted on this data and stored in ``self.scaler``.
     standardize : bool
-        Fit / apply StandardScaler (z-score).
+        Fit / apply StandardScaler (z-score) across all windows.
     normalize : bool
-        Fit / apply MinMaxScaler ([0, 1]).
+        Fit / apply MinMaxScaler ([0, 1]) across all windows.
+    window_norm : bool
+        Z-score each window independently (per feature, across timesteps).
+        Removes subject-specific baselines so the model only sees relative
+        temporal patterns.  Applied AFTER any global scaler.
     """
 
     def __init__(self, features, labels,
-                 scaler=None, standardize=False, normalize=False):
+                 scaler=None, standardize=False, normalize=False,
+                 window_norm=False):
         n, w, f = features.shape
         flat = features.reshape(-1, f)
 
@@ -209,6 +214,12 @@ class GaitDataset(Dataset):
             self.scaler = None
 
         features = flat.reshape(n, w, f)
+
+        if window_norm:
+            mean = features.mean(axis=1, keepdims=True)
+            std = features.std(axis=1, keepdims=True) + 1e-8
+            features = (features - mean) / std
+
         self.features = torch.tensor(features, dtype=torch.float32)
         self.labels = torch.tensor(labels, dtype=torch.long)
 
