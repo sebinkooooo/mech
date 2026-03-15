@@ -54,6 +54,9 @@ The raw data for each walking condition is first separated into right and left i
 \subsection{Sampling Rate}
 After merging, the data is resampled to a fixed \SI{60}{Hz}. If the merged stream has a frame rate below 60\,Hz we upsample by linear interpolation. If it is above 60\,Hz we downsample by selecting evenly spaced indices. This ensures that every recording, regardless of the original device clock, produces a uniform 60 samples per second stream.
 
+\paragraph{Note on upsampling correction.}
+An earlier version of the upsampling routine generated evenly spaced target timestamps and called \texttt{reindex} directly on the original data frame. Because the target timestamps almost never coincided exactly with the recorded timestamps (floating-point mismatch on ten-digit Unix epochs), the operation discarded virtually all original samples and left a single anchor point, causing \texttt{interpolate} to replicate one constant row across the entire recording. This affected 35 of 92 Injury\_walking training files and all four Group~10 recordings, whose native frame rate fell below \SI{60}{Hz}. The corrected implementation first takes the union of the original and target timestamp indices, interpolates over the combined index so that every original measurement serves as an anchor, and then selects the target timestamps. After this fix, all upsampled recordings contain the expected temporal variation.
+
 \subsection{Windowing}
 We define a window parameter $W$ as the number of consecutive rows provided to the model. In our configuration we use $W = 20$, which corresponds to an input segment of approximately 0.33 seconds. The stride between consecutive windows is set to $S = 5$, giving a 75\% overlap. This overlap produces more training samples and ensures that transient gait events are captured even if they fall near a window boundary. Each window is therefore a matrix of shape $20 \times 50$.
 
