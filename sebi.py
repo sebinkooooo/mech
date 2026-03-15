@@ -52,12 +52,10 @@ def downsample_to_60Hz(data, target_fps=60):
 def upsample_to_60Hz(data, target_fps=60):
     target_interval = 1.0 / target_fps
     new_ts = np.arange(data["timestamp"].min(), data["timestamp"].max(), target_interval)
-    data_interp = (
-        data.set_index("timestamp")
-        .reindex(new_ts)
-        .interpolate(method="linear")
-        .reset_index()
-    )
+    orig = data.set_index("timestamp")
+    combined = orig.reindex(orig.index.union(new_ts)).sort_index()
+    combined = combined.interpolate(method="index")
+    data_interp = combined.reindex(new_ts).reset_index()
     data_interp.rename(columns={"index": "timestamp"}, inplace=True)
     return data_interp
 
