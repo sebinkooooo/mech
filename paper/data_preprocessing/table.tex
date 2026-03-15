@@ -1,0 +1,37 @@
+\begin{table*}[t]
+    \centering
+    \small
+    \sisetup{table-number-alignment=center}
+    \begin{tabularx}{\textwidth}{|l|l|l|l|X|}
+      \hline
+      \textbf{Signal} & \textbf{Range} & \textbf{Components} & \textbf{Elements} & \textbf{Notes} \\
+      \hline
+      Cap sensing (pressure) & \(0 \dots 800\) & 18 electrodes & Ele\_0--Ele\_17 & Per-electrode plantar pressure. \\
+      \hline
+      Accelerometer (x, y, z) & \(-1 \dots 1\) & \(x, y, z\) & Ele\_18--Ele\_20 & 3D linear acceleration. \\
+      \hline
+      Accelerometer (time) & \(> 0\) & timestamp & Ele\_21 & \textbf{Redundant:} inner accelerometer timestamp (same timestep as row, dropped in preprocessing). \\
+      \hline
+      Gyroscope (roll, pitch, yaw) & \(-600 \dots 600\) & \(r, p, y\) & Ele\_22--Ele\_24 & Angular velocity in \(\si{\degree/\second}\). \\
+      \hline
+      Gyroscope (time) & \(> 0\) & timestamp & Ele\_25 & \textbf{Redundant:} inner gyroscope timestamp (same timestep as row, dropped in preprocessing). \\
+      \hline
+      Magnetometer (x, y, z) & \(-3000 \dots 3000\) & \(x, y, z\) & Ele\_26--Ele\_28 & Local magnetic field. \\
+      \hline
+      Magnetometer (time) & \(> 0\) & timestamp & Ele\_29 & \textbf{Redundant:} inner magnetometer timestamp (same timestep as row, dropped in preprocessing). \\
+      \hline
+      Quaternion & \(-1 \dots 1\) & \(x, y, z, v\) & Ele\_30--Ele\_33 & Orientation computed from all previous sensors. \\
+      \hline
+      Quaternion (time) & \(> 0\) & timestamp & Ele\_34 & \textbf{Redundant:} inner quaternion timestamp (same timestep as row, dropped in preprocessing). \\
+      \hline
+      Unused & --- & --- & Ele\_35 & Not used (reserved). \\
+      \hline
+      Insole side label & \(\{0, 1\}\) & right / left & Ele\_36 & Right \(=0\), Left \(=1\). \\
+      \hline
+      Battery status & \(0 \dots 100\) & percentage & Ele\_37 & \textbf{Redundant:} remaining battery level (not used in the model). \\
+      \hline
+    \end{tabularx}
+    \caption{Overview of per-timestep insole features, their numeric ranges, and element indices in the raw data vector.}
+    \label{tab:insole-features}
+  \end{table*}
+  

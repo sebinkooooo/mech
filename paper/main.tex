@@ -1,0 +1,112 @@
+% !TeX program = pdflatex
+\documentclass[11pt,a4paper,twocolumn]{article}
+
+% Encoding, language, and font setup
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage[english]{babel}
+\usepackage{lmodern}
+
+% Useful packages
+\usepackage{amsmath, amssymb, amsthm}
+\usepackage{graphicx}
+\usepackage{hyperref}
+\usepackage{booktabs}
+\usepackage{tabularx}
+\usepackage{siunitx}
+\usepackage{microtype}
+\usepackage[margin=1in]{geometry}
+
+\hypersetup{
+  colorlinks=true,
+  linkcolor=blue,
+  citecolor=blue,
+  urlcolor=blue
+}
+
+
+
+\title{TGT: Temporal Gait Transformer for Analyzing Biomechanics of Walking Abnormalities}
+\author{Your Name \\ \small Your Affiliation}
+\date{}
+
+\begin{document}
+
+\maketitle
+
+\begin{abstract}
+Your abstract goes here. Summarize the problem, approach, and key results in 150 to 250 words.
+\end{abstract}
+
+\section{Data Preprocessing}
+
+\subsection{Data Types}
+Data is collected from smart insoles on both feet of each subject. At every time step, the insoles measure pressure at multiple locations and provide accelerometer, gyroscope, and magnetometer readings, along with a computed quaternion and an insole label (right or left). Redundant fields include internal time stamps for each sub-device and battery status. A detailed list of all per-timestep features is provided in Table~\ref{tab:insole-features} in the Appendix.
+
+\subsection{Separating Input Data}
+The raw data for each walking condition is first separated into right and left insole streams using the insole identifier $ele\_36$. We then compare the time stamps of rows from the right and left insoles and match them into a single combined row when the difference in recording times satisfies the constraint $\delta t < 0.02$. Rows that do not satisfy this constraint are discarded. We remove redundant sub-time fields and drop gyroscope and magnetometer readings, because this information is already captured by the quaternions. The resulting dataset, with all retained channels, is summarized in Table~\ref{tab:insole-features-selected} in the Appendix. Each remaining row is a full entry for both feet.
+
+\subsection{Sampling Rate}
+We then prepare the model inputs. The data is sampled at \SI{60}{Hz} (60 samples per second). We define a window parameter, $\operatorname{Window}$, as the number of consecutive rows provided to the model. For example, a window of 20 corresponds to an input segment of approximately 0.33 seconds.
+
+\subsection{Attaching Outcomes}
+For each input segment (window by rows), we attach a walking label from the following set of classes, summarized in Table~\ref{tab:activity-classes}:
+
+\input{data_preprocessing/table_2.tex}
+
+\subsection{Split}
+The data was then split into a training and validation set randomly. ANOTHER SELF-OBTAINED VALIDAITON SET WAS ACQUIRED AND WILL BE USED FOR EVALUATION. 
+
+\section{Methodology}
+
+\subsection{128 Dimensional Projection of input data}
+
+We take the input data which is of form (row x window), where window is a tunable parameter. For every row, we pass it through a leanred linear projection ($Wx +b$) to obtain a 128-Dimensional embedding of each input. We treat each row in an input as a 'token' and thus assign a positional encoding by adding a positional vector (128D) to the projection vector. 
+
+\subsubsection{Obtaining position vetor}
+To generate the positonal encoding vector we use a fixed mathematical function that iwll asign a temproal signature to each of the $\operatorname{Window}$ timesteps. For a given position ($\operatorname{pos} \in {0, 1, \dots , \operatorname{Window - 1}} $)and a dimension index $i \in {0, 1, \dots , 127}$, the values are calculated using sine and cosine functions of varying frequencies:
+
+$$PE_{\operatorname{pos}, 2i} = sin(\frac{\operatorname{pos}}{10000^{\frac{2i}{d_\text{model}}}})$$
+$$PE_{\operatorname{pos}, 2i + 1} = cos\frac{\operatorname{pos}}{10000^{\frac{2i}{d_\text{model}}}})$$
+
+Using $d_{\text{model}} = 128$. By using the $1000^{\frac{2i}{d_\text{model}}}$ term in the denominator, each dimension $i$ follows a specific wavelenght; the lower dimensions oscillate rapdily to capture fine grained lcoal timing while other dimensions oscillate slowly to provide a global sense of where the sample sits within the overall segment.\newline
+
+The positional encoding calcul;ations give us a 128xWindow matrix that we can add to the matrix of 128dimensional embeddings. This gives us a position-adjusted final projection for each timestep row; which we can now use in a transformer architecture.
+
+\subsection{Transformer Setup}
+
+Firsly,a [CLS] Token (Classification) token is added to the matrix of shape 128x window contianing all the embeddings of ervery timestep. This token is a lernable paramter produced during training, and is independent of the current window. Its added and now the input to the transformer is a 128x(window+1) matrix. 
+
+\subsubsection{Attneiton Head}
+
+For each embedding in the matrix, we obtain a Query (Q), K(Key) and Value (V) vector which are learnable projections (Wx+b). We then perform a normalized dot product of all tokens against al other tokens, forming a 21x21 matrix. Each entry into the matrix is the dot product of the current tokens key vector compared to the query vector of the token its trying to attend to. This obtained score is then softmaxxed against all entries. We use this 21x21 matrix and multiply it by the 21x128 value V matrix, which returns a new scaled 21x128 matrix scaling each embedding by the attention scores. We then run the 21x128 matrix through a feed forward ntework (FFN) which projects the embeddings into a 512dimensional (4x)space, applies a Gaussian Error Linear Unit (GELU), and then projects back to a 128 dimensions. 
+
+We carry out multiple of these attention blocks (parameter), which help refine the data. o
+
+\subsubsection{LayerNorm}
+
+The CLT vector should now be adequatelly modified to represent the window of data. We pass it through a Normalization Layer.
+
+\subsubsection{Linear Mapping to Labels}
+
+We can now perform the compression, using a single linear layer (Wx + b) that is fully connected and outputs 5 features. We softmax the output logits and receive a probability scoring for each of the 5 possible otucomes.
+
+\subsection{Training}
+
+The TGT is trained via standard backpropagation. We take a one-hot encoding of the correct label  and calculate a loss function using standradr Cross-Etropy Loss. We use the Adam optimizer to go bacxkwards through the model, calculate weight contirbutions aand adjust weights accordingly. 
+
+
+
+\appendix
+
+\section*{Appendix}
+
+\subsection*{Insole Feature Definitions}
+
+\input{data_preprocessing/table.tex}
+
+\subsection*{Retained Input Features}
+
+\input{data_preprocessing/table_1.tex}
+
+\end{document}

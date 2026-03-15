@@ -1,0 +1,19 @@
+\begin{table*}[t]
+    \centering
+    \small
+    \sisetup{table-number-alignment=center}
+    \begin{tabularx}{\textwidth}{|l|l|l|l|X|}
+      \hline
+      \textbf{Signal} & \textbf{Range} & \textbf{Components} & \textbf{Elements} & \textbf{Rationale for inclusion} \\
+      \hline
+      Cap sensing (pressure) & \(0 \dots 800\) & 18 electrodes & Ele\_0--Ele\_17 & High-resolution plantar pressure map. Captures stance phase, load distribution, and contact pattern differences across activities (e.g., forefoot vs.\ heel loading in jumping vs.\ walking). \\
+      \hline
+      Accelerometer (linear) & \(-1 \dots 1\) & \(x, y, z\) & Ele\_18--Ele\_20 & Foot-frame linear acceleration. Encodes impact magnitude, swing dynamics, and vertical motion, which are highly discriminative for gait phase transitions and dynamic activities such as jumping. \\
+      \hline
+      Quaternion (orientation) & \(-1 \dots 1\) & \(x, y, z, v\) & Ele\_30--Ele\_33 & 3D orientation of the insole, fused from inertial and magnetic sensors. Provides a numerically stable, gimbal-lock-free representation of foot pose over time, enabling the model to learn differences in foot rotation patterns between gait types. \\
+      \hline
+    \end{tabularx}
+    \caption{Subset of insole signals retained for model input. We keep per-timestep plantar pressure, linear acceleration, and fused orientation (quaternions) for each foot, as these jointly capture contact mechanics, dynamic motion, and foot pose. Redundant timestamps, raw gyroscope/magnetometer channels, and battery state are excluded from the learning pipeline.}
+    \label{tab:insole-features-selected}
+  \end{table*}
+

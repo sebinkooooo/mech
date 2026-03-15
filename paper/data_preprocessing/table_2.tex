@@ -1,0 +1,23 @@
+\begin{table}[t]
+    \centering
+    \small
+    \sisetup{table-number-alignment=center}
+    \begin{tabularx}{\linewidth}{|c|l|X|}
+      \hline
+      \textbf{Class ID} & \textbf{Label} & \textbf{Description} \\
+      \hline
+      0 & Normal\_walking & Baseline gait pattern without perturbations or injury. Used as reference for distinguishing altered gait behaviours. \\
+      \hline
+      1 & Injury\_walking & Walking while simulating or experiencing injury (e.g., limping, reduced load on one side), leading to asymmetric pressure and motion patterns. \\
+      \hline
+      2 & Stepping & Repeated stepping in place or step-like movements with frequent foot lifts and contacts but limited forward progression. \\
+      \hline
+      3 & Swaying & Predominantly static stance with body sway, where the centre of pressure moves but feet largely remain planted. \\
+      \hline
+      4 & Jumping & Dynamic movements with clear take-off and landing phases, characterised by brief loss of contact and high impact forces on landing. \\
+      \hline
+    \end{tabularx}
+    \caption{Activity classes used for supervised learning. Each 0.33\,s window is assigned one of five class IDs according to the folder name of the source recording, following the mapping implemented in the code.}
+    \label{tab:activity-classes}
+  \end{table}
+
