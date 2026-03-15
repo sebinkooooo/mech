@@ -191,11 +191,13 @@ class GaitDataset(Dataset):
         Z-score each window independently (per feature, across timesteps).
         Removes subject-specific baselines so the model only sees relative
         temporal patterns.  Applied AFTER any global scaler.
+    augment : bool
+        Enable training-time augmentation (noise, scaling, time mask).
     """
 
     def __init__(self, features, labels,
                  scaler=None, standardize=False, normalize=False,
-                 window_norm=False):
+                 window_norm=False, augment=False):
         n, w, f = features.shape
         flat = features.reshape(-1, f)
 
@@ -214,6 +216,8 @@ class GaitDataset(Dataset):
             self.scaler = None
 
         features = flat.reshape(n, w, f)
+        self.window_norm = window_norm
+        self.augment = augment
 
         if window_norm:
             mean = features.mean(axis=1, keepdims=True)
@@ -227,7 +231,25 @@ class GaitDataset(Dataset):
         return len(self.features)
 
     def __getitem__(self, idx):
-        return self.features[idx], self.labels[idx]
+        x = self.features[idx]
+        if self.augment:
+            x = self._augment(x)
+        return x, self.labels[idx]
+
+    @staticmethod
+    def _augment(x):
+        """Gaussian jitter + random amplitude scaling + random time masking."""
+        # Gaussian noise (std 0.05 relative to normalized data)
+        x = x + torch.randn_like(x) * 0.05
+        # Random per-feature amplitude scaling in [0.8, 1.2]
+        scale = 0.8 + 0.4 * torch.rand(x.shape[-1])
+        x = x * scale
+        # Random time masking: zero out 1-3 consecutive timesteps
+        w = x.shape[0]
+        mask_len = torch.randint(1, 4, (1,)).item()
+        start = torch.randint(0, max(1, w - mask_len), (1,)).item()
+        x[start:start + mask_len] = 0.0
+        return x
 
 
 def compute_class_weights(labels, num_classes):
