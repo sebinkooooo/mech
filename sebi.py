@@ -455,9 +455,11 @@ print(summary(my_ml_model, input_size=(batch_size, window_size, feature_size)))
 import torch.optim as optim
 import random
 
-# Local folder to save trained models
+# Local folder to save trained models and figures
 save_file_path = os.path.join(HOME, "Saved_model")
+figures_path = os.path.join(HOME, "figures")
 os.makedirs(save_file_path, exist_ok=True)
+os.makedirs(figures_path, exist_ok=True)
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 print(f"Using device: {device}")
@@ -531,7 +533,10 @@ plt.ylabel('Accuracy (%)')
 plt.legend()
 
 plt.tight_layout()
+loss_curves_path = os.path.join(figures_path, "train_val_curves.png")
+plt.savefig(loss_curves_path, dpi=150, bbox_inches="tight")
 plt.show()
+print(f"📊 Loss/accuracy curves saved to: {loss_curves_path}")
 
 def test(model, test_loader):
     model.eval()
@@ -557,8 +562,6 @@ device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 # Define the path where the trained model is saved (same as save_file_path above)
 model_save_path = os.path.join(HOME, "Saved_model", "gait_model.pth")
 
-# Recreate the model architecture (Make sure it matches the saved model)
-model = MLP(input_dim=window_size * feature_size, hidden_dim=8, output_dim=5)
 
 # Load the trained model
 # 'weights_only=False' ensures that we are loading the entire model (structure + weights)
@@ -619,7 +622,10 @@ def plot_confusion_matrix(model, test_loader, class_names):
     plt.xlabel("Predicted Label")
     plt.ylabel("True Label")
     plt.title("Confusion Matrix")
+    confusion_path = os.path.join(figures_path, "confusion_matrix.png")
+    plt.savefig(confusion_path, dpi=150, bbox_inches="tight")
     plt.show()
+    print(f"📊 Confusion matrix saved to: {confusion_path}")
 
     # Print classification report
     print("Classification Report:\n", classification_report(all_test_labels, all_preds, target_names=class_names, zero_division=0))
