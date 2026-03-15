@@ -132,7 +132,7 @@ all_features = []
 all_labels = []
 
 # Local folder containing your pasted CSV data
-file_path = os.path.join(HOME, "Train_dataset")
+file_path = os.path.join(HOME, "train_dataset")
 
 if not os.path.isdir(file_path):
     print(f"Error: {file_path} is not a directory or does not exist, double check the above file path!")
