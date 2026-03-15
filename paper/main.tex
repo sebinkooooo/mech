@@ -35,7 +35,7 @@
 \maketitle
 
 \begin{abstract}
-Your abstract goes here. Summarize the problem, approach, and key results in 150 to 250 words.
+We present the Temporal Gait Transformer (TGT), a classification model that takes raw smart insole sensor data and identifies five distinct walking activities: normal walking, injury walking, stepping, swaying, and jumping. The input data comes from pressure sensors, accelerometers, and orientation quaternions on both feet. After merging left and right insole streams into synchronised rows at \SI{60}{Hz}, we segment the recording into overlapping windows of 20 timesteps (approximately 0.33 seconds each). Each timestep carries 50 sensor features. The TGT projects every timestep into a 128 dimensional embedding, adds a fixed sinusoidal positional encoding, prepends a learnable classification token, and passes the full sequence through four Transformer encoder layers with multi head self attention. A final linear head maps the classification token to five class probabilities. The model is trained with cross entropy loss and the AdamW optimiser over 60 epochs with cosine annealing of the learning rate. We evaluate on a held out test split from the training subjects as well as a fully external validation set collected from a separate group of subjects.
 \end{abstract}
 
 \section{Data Preprocessing}
@@ -44,57 +44,123 @@ Your abstract goes here. Summarize the problem, approach, and key results in 150
 Data is collected from smart insoles on both feet of each subject. At every time step, the insoles measure pressure at multiple locations and provide accelerometer, gyroscope, and magnetometer readings, along with a computed quaternion and an insole label (right or left). Redundant fields include internal time stamps for each sub-device and battery status. A detailed list of all per-timestep features is provided in Table~\ref{tab:insole-features} in the Appendix.
 
 \subsection{Separating Input Data}
-The raw data for each walking condition is first separated into right and left insole streams using the insole identifier $ele\_36$. We then compare the time stamps of rows from the right and left insoles and match them into a single combined row when the difference in recording times satisfies the constraint $\delta t < 0.02$. Rows that do not satisfy this constraint are discarded. We remove redundant sub-time fields and drop gyroscope and magnetometer readings, because this information is already captured by the quaternions. The resulting dataset, with all retained channels, is summarized in Table~\ref{tab:insole-features-selected} in the Appendix. Each remaining row is a full entry for both feet.
+The raw data for each walking condition is first separated into right and left insole streams using the insole identifier $ele\_36$. We then compare the time stamps of rows from the right and left insoles and match them into a single combined row when the difference in recording times satisfies the constraint $\delta t < 0.02$\,s. Rows that do not satisfy this constraint are discarded. We remove redundant sub-time fields and drop gyroscope and magnetometer readings, because this information is already captured by the quaternions. The resulting dataset, with all retained channels, is summarised in Table~\ref{tab:insole-features-selected} in the Appendix. Each remaining row is a full entry for both feet, containing 50 features in total: 18 pressure values, 3 accelerometer axes, and 4 quaternion components per foot.
 
 \subsection{Sampling Rate}
-We then prepare the model inputs. The data is sampled at \SI{60}{Hz} (60 samples per second). We define a window parameter, $\operatorname{Window}$, as the number of consecutive rows provided to the model. For example, a window of 20 corresponds to an input segment of approximately 0.33 seconds.
+After merging, the data is resampled to a fixed \SI{60}{Hz}. If the merged stream has a frame rate below 60\,Hz we upsample by linear interpolation. If it is above 60\,Hz we downsample by selecting evenly spaced indices. This ensures that every recording, regardless of the original device clock, produces a uniform 60 samples per second stream.
+
+\subsection{Windowing}
+We define a window parameter $W$ as the number of consecutive rows provided to the model. In our configuration we use $W = 20$, which corresponds to an input segment of approximately 0.33 seconds. The stride between consecutive windows is set to $S = 5$, giving a 75\% overlap. This overlap produces more training samples and ensures that transient gait events are captured even if they fall near a window boundary. Each window is therefore a matrix of shape $20 \times 50$.
 
 \subsection{Attaching Outcomes}
-For each input segment (window by rows), we attach a walking label from the following set of classes, summarized in Table~\ref{tab:activity-classes}:
+For each input window we attach a walking label from the following set of classes, summarised in Table~\ref{tab:activity-classes}:
 
 \input{data_preprocessing/table_2.tex}
 
 \subsection{Split}
-The data was then split into a training and validation set randomly. ANOTHER SELF-OBTAINED VALIDAITON SET WAS ACQUIRED AND WILL BE USED FOR EVALUATION. 
+The labelled windows are randomly split into three sets: 80\% for training, 10\% for validation, and 10\% for testing. The validation set is used during training to monitor generalisation and to select the best checkpoint. A separate external validation set was collected independently from Group~10 subjects who did not appear in the training data. This external set contains four of the five classes (Normal walking, Injury walking, Stepping, Swaying) and is used as an additional held out evaluation after training is complete.
+
 
 \section{Methodology}
 
-\subsection{128 Dimensional Projection of input data}
+The architecture of the TGT follows a standard Transformer encoder pipeline adapted for time series classification. The complete flow is: linear projection, positional encoding, classification token, Transformer encoder stack, layer normalisation, and a linear classification head. We describe each stage below.
 
-We take the input data which is of form (row x window), where window is a tunable parameter. For every row, we pass it through a leanred linear projection ($Wx +b$) to obtain a 128-Dimensional embedding of each input. We treat each row in an input as a 'token' and thus assign a positional encoding by adding a positional vector (128D) to the projection vector. 
+\subsection{Linear Projection to 128 Dimensions}
 
-\subsubsection{Obtaining position vetor}
-To generate the positonal encoding vector we use a fixed mathematical function that iwll asign a temproal signature to each of the $\operatorname{Window}$ timesteps. For a given position ($\operatorname{pos} \in {0, 1, \dots , \operatorname{Window - 1}} $)and a dimension index $i \in {0, 1, \dots , 127}$, the values are calculated using sine and cosine functions of varying frequencies:
+The input to the model is a window of shape $W \times 50$, where each of the $W = 20$ rows is a single timestep with 50 sensor features. For every timestep we apply a learned linear projection $\mathbf{z}_t = W_{\text{proj}}\,\mathbf{x}_t + \mathbf{b}_{\text{proj}}$ that maps the 50 dimensional input vector $\mathbf{x}_t$ to a 128 dimensional embedding $\mathbf{z}_t$. This projection is shared across all timesteps and is trained end to end with the rest of the model. After this step we have a $20 \times 128$ matrix of token embeddings.
 
-$$PE_{\operatorname{pos}, 2i} = sin(\frac{\operatorname{pos}}{10000^{\frac{2i}{d_\text{model}}}})$$
-$$PE_{\operatorname{pos}, 2i + 1} = cos\frac{\operatorname{pos}}{10000^{\frac{2i}{d_\text{model}}}})$$
+\subsection{Positional Encoding}
 
-Using $d_{\text{model}} = 128$. By using the $1000^{\frac{2i}{d_\text{model}}}$ term in the denominator, each dimension $i$ follows a specific wavelenght; the lower dimensions oscillate rapdily to capture fine grained lcoal timing while other dimensions oscillate slowly to provide a global sense of where the sample sits within the overall segment.\newline
+Since the Transformer has no built in notion of ordering, we add a fixed positional encoding to each token embedding so the model can distinguish early timesteps from later ones within the window. For a given position $\text{pos} \in \{0, 1, \dots, W{-}1\}$ and a dimension index $i \in \{0, 1, \dots, 63\}$ we compute:
 
-The positional encoding calcul;ations give us a 128xWindow matrix that we can add to the matrix of 128dimensional embeddings. This gives us a position-adjusted final projection for each timestep row; which we can now use in a transformer architecture.
+\begin{align}
+PE_{\text{pos},\, 2i}   &= \sin\!\left(\frac{\text{pos}}{10000^{\,2i / d_{\text{model}}}}\right) \\[4pt]
+PE_{\text{pos},\, 2i+1} &= \cos\!\left(\frac{\text{pos}}{10000^{\,2i / d_{\text{model}}}}\right)
+\end{align}
 
-\subsection{Transformer Setup}
+with $d_{\text{model}} = 128$. The denominator $10000^{2i/d_{\text{model}}}$ means that lower dimensions oscillate rapidly and capture fine grained local timing, while higher dimensions oscillate slowly and encode a broader sense of where the timestep sits within the segment. The result is a $20 \times 128$ matrix of positional vectors which we add element wise to the projection matrix.
 
-Firsly,a [CLS] Token (Classification) token is added to the matrix of shape 128x window contianing all the embeddings of ervery timestep. This token is a lernable paramter produced during training, and is independent of the current window. Its added and now the input to the transformer is a 128x(window+1) matrix. 
+\subsection{Classification Token}
 
-\subsubsection{Attneiton Head}
+Before passing the sequence into the Transformer we prepend a special learnable vector called the [CLS] token. This token has the same dimensionality (128) as the timestep embeddings but is not tied to any specific timestep. It is a free parameter that the model learns during training. Its purpose is to serve as an aggregation point: after the Transformer processes the full sequence, the [CLS] token will have attended to every timestep and should contain a summary representation of the entire window. After prepending, the input to the Transformer is a matrix of shape $21 \times 128$ (20 timestep tokens plus 1 classification token).
 
-For each embedding in the matrix, we obtain a Query (Q), K(Key) and Value (V) vector which are learnable projections (Wx+b). We then perform a normalized dot product of all tokens against al other tokens, forming a 21x21 matrix. Each entry into the matrix is the dot product of the current tokens key vector compared to the query vector of the token its trying to attend to. This obtained score is then softmaxxed against all entries. We use this 21x21 matrix and multiply it by the 21x128 value V matrix, which returns a new scaled 21x128 matrix scaling each embedding by the attention scores. We then run the 21x128 matrix through a feed forward ntework (FFN) which projects the embeddings into a 512dimensional (4x)space, applies a Gaussian Error Linear Unit (GELU), and then projects back to a 128 dimensions. 
+\subsection{Transformer Encoder}
 
-We carry out multiple of these attention blocks (parameter), which help refine the data. o
+The core of the model is a stack of $N = 4$ identical Transformer encoder layers. Each layer consists of two sub-blocks.
 
-\subsubsection{LayerNorm}
+\subsubsection{Multi Head Self Attention}
 
-The CLT vector should now be adequatelly modified to represent the window of data. We pass it through a Normalization Layer.
+For each of the 21 tokens, the layer computes three vectors: a Query ($Q$), a Key ($K$), and a Value ($V$), each obtained by a learned linear projection. The attention score between any two tokens is the dot product of one token's query with another token's key, scaled by $\sqrt{d_{\text{model}}}$. These scores are collected into a $21 \times 21$ matrix and passed through a softmax so that each row sums to one. Multiplying this attention matrix by the Value matrix produces a new $21 \times 128$ matrix where each token is now a weighted combination of all other tokens, according to how relevant they are.
 
-\subsubsection{Linear Mapping to Labels}
+We use $H = 4$ attention heads in parallel. Each head operates on a $128/4 = 32$ dimensional slice of the embedding, computes its own attention independently, and the results are concatenated back to 128 dimensions.
 
-We can now perform the compression, using a single linear layer (Wx + b) that is fully connected and outputs 5 features. We softmax the output logits and receive a probability scoring for each of the 5 possible otucomes.
+\subsubsection{Feed Forward Network}
 
-\subsection{Training}
+After attention, each token passes independently through a two layer feed forward network (FFN). The FFN first projects from 128 to 512 dimensions (a 4$\times$ expansion), applies a Gaussian Error Linear Unit (GELU) activation, and then projects back to 128 dimensions. Residual connections and layer normalisation are applied around both the attention sub-block and the FFN sub-block.
 
-The TGT is trained via standard backpropagation. We take a one-hot encoding of the correct label  and calculate a loss function using standradr Cross-Etropy Loss. We use the Adam optimizer to go bacxkwards through the model, calculate weight contirbutions aand adjust weights accordingly. 
+A dropout rate of 0.1 is applied inside both the attention and FFN sub-blocks. The four encoder layers are applied sequentially, and each one refines the token representations further.
 
+\subsection{Layer Normalisation and Classification Head}
+
+After the final encoder layer, we extract the [CLS] token (position 0 of the 21 token sequence). This single 128 dimensional vector is passed through a Layer Normalisation step and then through a fully connected linear layer $\mathbf{o} = W_{\text{cls}}\,\mathbf{h}_{\text{CLS}} + \mathbf{b}_{\text{cls}}$ that outputs 5 values, one for each class. A softmax is applied to these logits to obtain a probability distribution over the five activities.
+
+\subsection{Training Configuration}
+
+The model is trained with standard backpropagation using Cross Entropy Loss between the predicted class probabilities and the one hot encoded ground truth labels. We use the AdamW optimiser, which adds decoupled weight decay to the standard Adam update rule. The specific training parameters are:
+
+\begin{table}[ht]
+\centering
+\small
+\begin{tabular}{ll}
+\toprule
+\textbf{Parameter} & \textbf{Value} \\
+\midrule
+Optimiser & AdamW \\
+Learning rate & $3 \times 10^{-4}$ \\
+Weight decay & $1 \times 10^{-4}$ \\
+LR schedule & Cosine annealing \\
+Batch size & 64 \\
+Epochs & 60 \\
+Dropout & 0.1 \\
+\bottomrule
+\end{tabular}
+\caption{Training hyperparameters used for TGT.}
+\label{tab:training-params}
+\end{table}
+
+The learning rate starts at $3 \times 10^{-4}$ and is decayed following a cosine schedule over the full 60 epochs, reaching near zero by the end of training. We save the model checkpoint that achieves the highest validation accuracy during training and use that checkpoint for all subsequent evaluation.
+
+\subsection{Model Summary}
+
+Table~\ref{tab:model-params} summarises the architectural choices of the TGT.
+
+\begin{table}[ht]
+\centering
+\small
+\begin{tabular}{ll}
+\toprule
+\textbf{Component} & \textbf{Value} \\
+\midrule
+Input features per timestep & 50 \\
+Window size ($W$) & 20 \\
+Stride ($S$) & 5 \\
+Embedding dimension ($d_{\text{model}}$) & 128 \\
+Attention heads ($H$) & 4 \\
+Encoder layers ($N$) & 4 \\
+FFN hidden dimension & 512 \\
+Positional encoding & Fixed sinusoidal \\
+Classification token & Learnable [CLS] \\
+Output classes & 5 \\
+Total trainable parameters & ${\sim}$\,600k \\
+\bottomrule
+\end{tabular}
+\caption{TGT model architecture summary.}
+\label{tab:model-params}
+\end{table}
+
+\section{Evaluation and Results}
+
+\textit{To be completed after training runs.}
 
 
 \appendix

@@ -1,4 +1,4 @@
-This is pdfTeX, Version 3.141592653-2.6-1.40.27 (TeX Live 2025) (preloaded format=pdflatex 2025.12.18)  15 MAR 2026 17:22
+This is pdfTeX, Version 3.141592653-2.6-1.40.27 (TeX Live 2025) (preloaded format=pdflatex 2025.12.18)  15 MAR 2026 18:21
 entering extended mode
  restricted \write18 enabled.
  file:line:error style messages enabled.
@@ -558,13 +558,15 @@ File: umsb.fd 2013/01/14 v3.01 AMS symbols B
 File: mt-msb.cfg 2005/06/01 v1.0 microtype config. file: AMS symbols (b) (RS)
 )
 LaTeX Font Info:    External font `lmex10' loaded for size
-(Font)              <10.95> on input line 47.
-
-Underfull \vbox (badness 1990) has occurred while \output is active []
+(Font)              <10.95> on input line 38.
 
 
 
-(./data_preprocessing/table_2.tex
+
+[1{/usr/local/texlive/2025/texmf-var/fonts/map/pdftex/updmap/pdftex.map}{/usr/local/texlive/2025/texmf-dist/fonts/enc/dvips/lm/lm-ec.enc}
+
+
+{/usr/local/texlive/2025/texmf-dist/fonts/enc/dvips/lm/lm-rm.enc}{/usr/local/texlive/2025/texmf-dist/fonts/enc/dvips/lm/lm-mathit.enc}] (./data_preprocessing/table_2.tex
 Underfull \hbox (badness 10000) in paragraph at lines 19--19
 []|\T1/lmr/m/n/10 (+20) Baseline gait
  []
@@ -716,20 +718,19 @@ Underfull \hbox (badness 4556) in paragraph at lines 19--19
 
 )
 
-[1{/usr/local/texlive/2025/texmf-var/fonts/map/pdftex/updmap/pdftex.map}{/usr/local/texlive/2025/texmf-dist/fonts/enc/dvips/lm/lm-ec.enc}
 
-
-{/usr/local/texlive/2025/texmf-dist/fonts/enc/dvips/lm/lm-mathit.enc}{/usr/local/texlive/2025/texmf-dist/fonts/enc/dvips/lm/lm-rm.enc}]
-Underfull \hbox (badness 1178) in paragraph at lines 72--73
-\T1/lmr/m/n/10.95 (+20) os-cil-late slowly to pro-vide a global sense
+Underfull \hbox (badness 1009) in paragraph at lines 81--82
+[]\T1/lmr/m/n/10.95 (+20) with $\OML/lmm/m/it/10.95 d[] \OT1/lmr/m/n/10.95 (+20) = 128$\T1/lmr/m/n/10.95 (+20) . The de-nom-i-na-tor
  []
 
 
-Underfull \hbox (badness 10000) in paragraph at lines 72--73
 
+[2{/usr/local/texlive/2025/texmf-dist/fonts/enc/dvips/lm/lm-mathsy.enc}{/usr/local/texlive/2025/texmf-dist/fonts/enc/dvips/lm/lm-mathex.enc}]
+
+
+Overfull \hbox (8.06pt too wide) in paragraph at lines 140--157
+ [][] 
  []
-
-
 
 (./data_preprocessing/table.tex
 Underfull \hbox (badness 10000) in paragraph at lines 33--33
@@ -808,33 +809,31 @@ Underfull \hbox (badness 1348) in paragraph at lines 15--15
 
 )
 
-[2{/usr/local/texlive/2025/texmf-dist/fonts/enc/dvips/lm/lm-mathsy.enc}]
+[3]
 
 
 
-[3
-
-] [4] [5] (./main.aux)
+[4] [5] [6] (./main.aux)
  ***********
 LaTeX2e <2024-11-01> patch level 2
 L3 programming layer <2025-01-18>
  ***********
 Package rerunfilecheck Info: File `main.out' has not changed.
-(rerunfilecheck)             Checksum: 10318A9C4A0D5B88D5DA93B9ED973F1F;2029.
+(rerunfilecheck)             Checksum: DE66D786EE9AE90419D2419BC3B676F7;2806.
  ) 
 Here is how much of TeX's memory you used:
- 17889 strings out of 473190
- 343172 string characters out of 5715799
- 766657 words of memory out of 5000000
- 40741 multiletter control sequences out of 15000+600000
- 627345 words of font info for 158 fonts, out of 8000000 for 9000
+ 17994 strings out of 473190
+ 344496 string characters out of 5715799
+ 767763 words of memory out of 5000000
+ 40768 multiletter control sequences out of 15000+600000
+ 657882 words of font info for 197 fonts, out of 8000000 for 9000
  1141 hyphenation exceptions out of 8191
- 75i,13n,79p,1028b,1060s stack positions out of 10000i,1000n,20000p,200000b,200000s
-</usr/local/texlive/2025/texmf-dist/fonts/type1/public/lm/lmbx10.pfb></usr/local/texlive/2025/texmf-dist/fonts/type1/public/lm/lmbx12.pfb></usr/local/texlive/2025/texmf-dist/fonts/type1/public/lm/lmmi10.pfb></usr/local/texlive/2025/texmf-dist/fonts/type1/public/lm/lmmi6.pfb></usr/local/texlive/2025/texmf-dist/fonts/type1/public/lm/lmmi8.pfb></usr/local/texlive/2025/texmf-dist/fonts/type1/public/lm/lmr10.pfb></usr/local/texlive/2025/texmf-dist/fonts/type1/public/lm/lmr12.pfb></usr/local/texlive/2025/texmf-dist/fonts/type1/public/lm/lmr17.pfb></usr/local/texlive/2025/texmf-dist/fonts/type1/public/lm/lmr6.pfb></usr/local/texlive/2025/texmf-dist/fonts/type1/public/lm/lmr8.pfb></usr/local/texlive/2025/texmf-dist/fonts/type1/public/lm/lmsy10.pfb></usr/local/texlive/2025/texmf-dist/fonts/type1/public/lm/lmsy7.pfb>
-Output written on main.pdf (5 pages, 230401 bytes).
+ 75i,14n,79p,1249b,1068s stack positions out of 10000i,1000n,20000p,200000b,200000s
+</usr/local/texlive/2025/texmf-dist/fonts/type1/public/lm/lmbx10.pfb></usr/local/texlive/2025/texmf-dist/fonts/type1/public/lm/lmbx12.pfb></usr/local/texlive/2025/texmf-dist/fonts/type1/public/lm/lmex10.pfb></usr/local/texlive/2025/texmf-dist/fonts/type1/public/lm/lmmi10.pfb></usr/local/texlive/2025/texmf-dist/fonts/type1/public/lm/lmmi8.pfb></usr/local/texlive/2025/texmf-dist/fonts/type1/public/lm/lmr10.pfb></usr/local/texlive/2025/texmf-dist/fonts/type1/public/lm/lmr12.pfb></usr/local/texlive/2025/texmf-dist/fonts/type1/public/lm/lmr17.pfb></usr/local/texlive/2025/texmf-dist/fonts/type1/public/lm/lmr6.pfb></usr/local/texlive/2025/texmf-dist/fonts/type1/public/lm/lmr7.pfb></usr/local/texlive/2025/texmf-dist/fonts/type1/public/lm/lmr8.pfb></usr/local/texlive/2025/texmf-dist/fonts/type1/public/lm/lmri10.pfb></usr/local/texlive/2025/texmf-dist/fonts/type1/public/lm/lmsy10.pfb></usr/local/texlive/2025/texmf-dist/fonts/type1/public/lm/lmsy7.pfb></usr/local/texlive/2025/texmf-dist/fonts/type1/public/lm/lmsy8.pfb>
+Output written on main.pdf (6 pages, 285202 bytes).
 PDF statistics:
- 175 PDF objects out of 1000 (max. 8388607)
- 139 compressed objects within 2 object streams
- 27 named destinations out of 1000 (max. 500000)
- 36977 words of extra memory for PDF output out of 42996 (max. 10000000)
+ 220 PDF objects out of 1000 (max. 8388607)
+ 176 compressed objects within 2 object streams
+ 36 named destinations out of 1000 (max. 500000)
+ 55441 words of extra memory for PDF output out of 61914 (max. 10000000)
 
