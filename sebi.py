@@ -1,638 +1,390 @@
-import os
-HOME = os.getcwd()
-print(HOME)
+"""
+sebi.py  –  Temporal Gait Transformer (TGT) utilities
+=====================================================
+Importable module containing:
+  * Insole CSV preprocessing (merge L/R, resample to 60 Hz)
+  * Sliding-window segmentation
+  * PyTorch Dataset
+  * TGT model class
+  * Training / validation / testing helpers
+  * Plotting helpers (curves, confusion matrix, per-class bar chart)
+"""
 
-import pandas as pd
+import os
+import math
 import numpy as np
+import pandas as pd
 from tqdm import tqdm
 
+import torch
+import torch.nn as nn
+from torch.utils.data import Dataset, DataLoader
+
+# ── non-interactive matplotlib so headless / subprocess works ────────────
+import matplotlib
+matplotlib.use("Agg")
+import matplotlib.pyplot as plt
+import seaborn as sns
+from sklearn.metrics import confusion_matrix, classification_report
+from sklearn.preprocessing import StandardScaler, MinMaxScaler
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+#  DATA  PREPROCESSING
+# ═══════════════════════════════════════════════════════════════════════════
+
 def get_frame_rate(data):
-    avg_interval = data['timestamp'].diff().mean()
-    current_fps = 1 / avg_interval if avg_interval > 0 else None
-    return current_fps
+    avg_interval = data["timestamp"].diff().mean()
+    return 1 / avg_interval if avg_interval > 0 else None
 
 
 def downsample_to_60Hz(data, target_fps=60):
-    total_time = data['timestamp'].iloc[-1] - data['timestamp'].iloc[0]
+    total_time = data["timestamp"].iloc[-1] - data["timestamp"].iloc[0]
     total_frames = len(data)
     current_fps = total_frames / total_time if total_time > 0 else None
-
     if current_fps and current_fps > target_fps:
         target_frame_count = int(total_time * target_fps)
-
         indices = np.linspace(0, total_frames - 1, target_frame_count, dtype=int)
-        data_downsampled = data.iloc[indices].reset_index(drop=True)
-        return data_downsampled
-    else:
-        return data
+        return data.iloc[indices].reset_index(drop=True)
+    return data
 
 
 def upsample_to_60Hz(data, target_fps=60):
     target_interval = 1.0 / target_fps
+    new_ts = np.arange(data["timestamp"].min(), data["timestamp"].max(), target_interval)
+    data_interp = (
+        data.set_index("timestamp")
+        .reindex(new_ts)
+        .interpolate(method="linear")
+        .reset_index()
+    )
+    data_interp.rename(columns={"index": "timestamp"}, inplace=True)
+    return data_interp
 
-    new_timestamps = np.arange(data['timestamp'].min(), data['timestamp'].max(), target_interval)
-    data_interpolated = data.set_index('timestamp').reindex(new_timestamps).interpolate(method='linear').reset_index()
-    data_interpolated.rename(columns={'index': 'timestamp'}, inplace=True)
-
-    return data_interpolated
 
 def insole_process(file_path):
-    target_fps = 60 # a fixed 60hz sampling frequency for all the datas
-    data = pd.read_csv(file_path)
-    data = data.dropna()
-    left_foot_data = data[data['ele_36'] == 1]  # Left foot data
-    right_foot_data = data[data['ele_36'] == 0]  # right foot data
+    """Read a raw insole CSV, merge L/R feet, resample to 60 Hz."""
+    target_fps = 60
+    data = pd.read_csv(file_path).dropna()
+    left = data[data["ele_36"] == 1]
+    right = data[data["ele_36"] == 0]
 
-    # 0-17: pressure, 18-20: accelerometer, 30-33: quaternion (orientation)
-    cols_to_extract = ['ele_' + str(i) for i in range(18)] + ['ele_18', 'ele_19', 'ele_20', 'ele_30', 'ele_31', 'ele_32', 'ele_33']
+    # 0-17: pressure, 18-20: accelerometer, 30-33: quaternion
+    cols = [f"ele_{i}" for i in range(18)] + [
+        "ele_18", "ele_19", "ele_20",
+        "ele_30", "ele_31", "ele_32", "ele_33",
+    ]
+    left = left[["timestamp"] + cols]
+    right = right[["timestamp"] + cols]
 
-    left_foot_data = left_foot_data[['timestamp'] + cols_to_extract]
-    right_foot_data = right_foot_data[['timestamp'] + cols_to_extract]
+    left_fps = get_frame_rate(left)
+    right_fps = get_frame_rate(right)
 
-    left_fps = get_frame_rate(left_foot_data)
-    right_fps = get_frame_rate(right_foot_data)
-
-    # print('Left foot data', left_foot_data.shape, 'Frame rate: {:.2f} Hz'.format(left_fps))
-    # print('Right foot data', right_foot_data.shape, 'Frame rate: {:.2f} Hz'.format(right_fps))
-
-    # use low fps data to match high fps data
     if left_fps < right_fps:
-        base_data = left_foot_data  # low fps data
-        high_fps_data = right_foot_data  # high fps data
-        suffixes = ('_left', '_right')
+        base, high, suffixes = left, right, ("_left", "_right")
     else:
-        base_data = right_foot_data
-        high_fps_data = left_foot_data
-        suffixes = ('_right', '_left')
+        base, high, suffixes = right, left, ("_right", "_left")
 
-    merged_data = pd.merge_asof(base_data.drop_duplicates(subset=['timestamp']).sort_values('timestamp').reset_index(drop=True),
-                                high_fps_data.drop_duplicates(subset=['timestamp']).sort_values('timestamp').reset_index(drop=True),
-                                on='timestamp',
-                                direction='nearest',  # match nearest one
-                                suffixes=suffixes,
-                                tolerance=0.02) # 10ms = 0.01s
+    merged = pd.merge_asof(
+        base.drop_duplicates(subset=["timestamp"]).sort_values("timestamp").reset_index(drop=True),
+        high.drop_duplicates(subset=["timestamp"]).sort_values("timestamp").reset_index(drop=True),
+        on="timestamp",
+        direction="nearest",
+        suffixes=suffixes,
+        tolerance=0.02,
+    )
 
-    right_first = any(col.endswith('_right') for col in merged_data.columns[1:])  # if right at front
-    if right_first:
-        left_columns = [col for col in merged_data.columns if '_left' in col]
-        right_columns = [col for col in merged_data.columns if '_right' in col]
-        merged_data = merged_data[['timestamp'] + left_columns + right_columns]  # change sequence
+    if any(c.endswith("_right") for c in merged.columns[1:]):
+        lcols = [c for c in merged.columns if "_left" in c]
+        rcols = [c for c in merged.columns if "_right" in c]
+        merged = merged[["timestamp"] + lcols + rcols]
 
-    merged_data = merged_data.dropna()
-    current_fps = get_frame_rate(merged_data)
-
-    if current_fps < target_fps:
-        output_data = upsample_to_60Hz(merged_data, target_fps)
-    elif current_fps > target_fps:
-        output_data = downsample_to_60Hz(merged_data, target_fps)
-    else:
-        output_data = merged_data
-    return output_data
+    merged = merged.dropna()
+    fps = get_frame_rate(merged)
+    if fps < target_fps:
+        return upsample_to_60Hz(merged, target_fps)
+    if fps > target_fps:
+        return downsample_to_60Hz(merged, target_fps)
+    return merged
 
 
-#  you can change window size and overlap ratio (stride/window_size) here.
-window_size = 20  # 0.33 second window (tunable)
-stride = 15       # stride between consecutive windows (tunable)
+# ── windowing ────────────────────────────────────────────────────────────
 
-# Transformer model hyperparameters (all tunable)
-d_model = 128          # dimensionality of token embeddings
-num_heads = 4          # number of attention heads
-num_layers = 2         # number of Transformer encoder layers
-dim_feedforward = 512  # FFN hidden size inside each encoder layer
-dropout = 0.1          # dropout rate inside Transformer
-
-# Training hyperparameters (all tunable)
-batch_size = 32
-learning_rate = 1e-4
-num_epochs = 20
-
-# You can select features here by disabling indexing. (feature set is tunable)
-feature_columns = [
-    # Left foot data in merged file
-    'ele_0_left', 'ele_1_left', 'ele_2_left','ele_3_left', 'ele_4_left', 'ele_5_left','ele_6_left', 'ele_7_left', 'ele_8_left', 'ele_9_left', 'ele_10_left', 'ele_11_left',  # Pressure
-    'ele_12_left', 'ele_13_left', 'ele_14_left','ele_15_left', 'ele_16_left', 'ele_17_left',  # Pressure
-    'ele_18_left', 'ele_19_left', 'ele_20_left',  # Accelerometer x,y,z
-    'ele_30_left', 'ele_31_left', 'ele_32_left', 'ele_33_left',  # Quaternion x,y,z,v
-
-    # Right foot data in merged file
-    'ele_0_right', 'ele_1_right', 'ele_2_right','ele_3_right', 'ele_4_right', 'ele_5_right','ele_6_right', 'ele_7_right', 'ele_8_right', 'ele_9_right', 'ele_10_right', 'ele_11_right',  # Pressure
-    'ele_12_right', 'ele_13_right', 'ele_14_right','ele_15_right', 'ele_16_right', 'ele_17_right',  # Pressure
-    'ele_18_right', 'ele_19_right', 'ele_20_right',  # Accelerometer x,y,z
-    'ele_30_right', 'ele_31_right', 'ele_32_right', 'ele_33_right',  # Quaternion x,y,z,v
+FEATURE_COLUMNS = [
+    # Left pressure (18)
+    *[f"ele_{i}_left" for i in range(18)],
+    # Left accelerometer (3)
+    "ele_18_left", "ele_19_left", "ele_20_left",
+    # Left quaternion (4)
+    "ele_30_left", "ele_31_left", "ele_32_left", "ele_33_left",
+    # Right pressure (18)
+    *[f"ele_{i}_right" for i in range(18)],
+    # Right accelerometer (3)
+    "ele_18_right", "ele_19_right", "ele_20_right",
+    # Right quaternion (4)
+    "ele_30_right", "ele_31_right", "ele_32_right", "ele_33_right",
 ]
 
-feature_size = len(feature_columns)
-label_mapping = {"Normal_walking": 0,
-                  "Injury_walking": 1,
-                  "Stepping":2,
-                  "Swaying":3,
-                  "Jumping": 4,
-                  }
-all_features = []
-all_labels = []
+LABEL_MAPPING = {
+    "Normal_walking": 0,
+    "Injury_walking": 1,
+    "Stepping": 2,
+    "Swaying": 3,
+    "Jumping": 4,
+}
 
-# Local folder containing your pasted CSV data
-file_path = os.path.join(HOME, "train_dataset")
-
-if not os.path.isdir(file_path):
-    print(f"Error: {file_path} is not a directory or does not exist, double check the above file path!")
+CLASS_NAMES = ["Normal_walking", "Injury_walking", "Stepping", "Swaying", "Jumping"]
 
 
-for folder_name in os.listdir(file_path):
-    folder_path = os.path.join(file_path, folder_name)
+def load_and_window(data_dir, feature_columns, label_mapping,
+                    window_size, stride):
+    """
+    Walk *data_dir* (expects sub-folders whose names contain a label key),
+    preprocess every CSV, and return windowed numpy arrays.
 
-    for keyword in tqdm(label_mapping, desc="Processing data", unit= folder_name):
-        if keyword in folder_name:
-            for file_name in os.listdir(folder_path):
-                if file_name.endswith(".csv"):
-                    csv_file_path = os.path.join(folder_path, file_name)
-                    # print("Processing",csv_file_path)
-                    features = insole_process(csv_file_path)[feature_columns]
+    Returns (features, labels) as numpy arrays.
+    """
+    all_features, all_labels = [], []
+    if not os.path.isdir(data_dir):
+        raise FileNotFoundError(f"{data_dir} does not exist")
 
-                    num_frames = features.shape[0]
-                    for start_idx in range(0, num_frames - window_size + 1, stride):
-                      end_idx = start_idx + window_size
-                      window_features = features[start_idx:end_idx]
+    for folder_name in sorted(os.listdir(data_dir)):
+        folder_path = os.path.join(data_dir, folder_name)
+        if not os.path.isdir(folder_path):
+            continue
+        for keyword, label_id in label_mapping.items():
+            if keyword in folder_name:
+                csvs = [f for f in os.listdir(folder_path) if f.endswith(".csv")]
+                for fname in tqdm(csvs, desc=f"{keyword}", unit="file"):
+                    fpath = os.path.join(folder_path, fname)
+                    try:
+                        feats = insole_process(fpath)[feature_columns]
+                    except Exception as e:
+                        print(f"  ⚠ skipping {fname}: {e}")
+                        continue
+                    n = feats.shape[0]
+                    for s in range(0, n - window_size + 1, stride):
+                        all_features.append(feats.iloc[s : s + window_size].values)
+                        all_labels.append(label_id)
+                break  # matched keyword; no need to check remaining
 
-                      all_features.append(window_features)
-                      all_labels.append(label_mapping[keyword])
+    return np.array(all_features, dtype=np.float32), np.array(all_labels, dtype=np.int64)
 
-all_features = np.array(all_features)
-all_labels = np.array(all_labels)
 
-print("="*50)
-print("✅ Data Processing Completed Successfully!")
-print(f"📊 Total Dataset Samples: {all_features.shape[0]}")
-print(f"📏 Window Size: {window_size} frames ({window_size / 60:.2f} seconds)")
-print(f"🔄 Overlap ratio: {stride/window_size:.2f}")
-print(f"🧩 Feature Shape {all_features.shape}")
-print(f"🔢 Number of Labels: {all_labels.shape[0]}")
+# ═══════════════════════════════════════════════════════════════════════════
+#  DATASET
+# ═══════════════════════════════════════════════════════════════════════════
 
-import torch
-from torch.utils.data import Dataset, DataLoader, random_split
-import numpy as np
-from sklearn.preprocessing import StandardScaler, MinMaxScaler
-
-# Define the dataset class for gait analysis
 class GaitDataset(Dataset):
-    def __init__(self, features, labels, Standard_flag=False, Normalize_flag=False):
-        """
-        Initialize the dataset with feature and label tensors.
-
-        :param features: NumPy array of shape (num_samples, window_size, num_features)
-        :param labels: NumPy array of shape (num_samples,)
-        """
-        num_samples, window_size, num_features = features.shape
-        reshaped_features = features.reshape(-1, num_features)  # Flatten the window axis
-
-        if Standard_flag:
-            scaler = StandardScaler()
-
-            # Fit the scaler and transform the data (normalize)
-            Processed_features = scaler.fit_transform(reshaped_features)
-
-            # Reshape back to the original dimensions (num_samples, window_size, num_features)
-            features = Processed_features.reshape((num_samples, window_size, num_features))
-
-        if Normalize_flag:
-            scaler = MinMaxScaler()
-
-            # Fit the scaler and transform the data (normalize)
-            Processed_features = scaler.fit_transform(reshaped_features)
-
-            # Reshape back to the original dimensions (num_samples, window_size, num_features)
-            features = Processed_features.reshape((num_samples, window_size, num_features))
-
-        self.features = torch.tensor(features, dtype=torch.float32)  # Convert features to a PyTorch tensor (float32)
-        self.labels = torch.tensor(labels, dtype=torch.long)  # Convert labels to a PyTorch tensor (long, for classification)
+    def __init__(self, features, labels,
+                 standardize=False, normalize=False):
+        n, w, f = features.shape
+        flat = features.reshape(-1, f)
+        if standardize:
+            flat = StandardScaler().fit_transform(flat)
+        if normalize:
+            flat = MinMaxScaler().fit_transform(flat)
+        features = flat.reshape(n, w, f)
+        self.features = torch.tensor(features, dtype=torch.float32)
+        self.labels = torch.tensor(labels, dtype=torch.long)
 
     def __len__(self):
-        """
-        Return the total number of samples in the dataset.
-        """
         return len(self.features)
 
     def __getitem__(self, idx):
-        """
-        Retrieve a single sample (features, label) by index.
-        :param idx: Index of the sample to retrieve
-        :return: Tuple (features, label)
-        """
         return self.features[idx], self.labels[idx]
 
-# Convert NumPy arrays into a PyTorch dataset
-dataset = GaitDataset(all_features, all_labels,
-                      Standard_flag = False,
-                      Normalize_flag= False
-                      )
 
-train_size = int(0.8 * len(dataset))  # 80% for training
-val_size = int(0.1 * len(dataset))    # 10% for validation
-test_size = len(dataset) - train_size - val_size  # Remaining 10% for testing
-
-train_dataset, val_dataset, test_dataset = random_split(dataset, [train_size, val_size, test_size])
-
-# ✅ Verify the dataset by printing its details
-print(f"✅ Dataset loaded successfully! Total samples: {len(dataset)}")
-print(f"   🔹 Training set: {len(train_dataset)} samples")
-print(f"   🔹 Validation set: {len(val_dataset)} samples")
-print(f"   🔹 Test set: {len(test_dataset)} samples")
-
-
-import torch
-
-# Function to train the model
-def train(model, train_loader, criterion, optimizer):
-    """
-    Trains the given model using the provided training data.
-
-    Args:
-        model (torch.nn.Module): The neural network model.
-        train_loader (torch.utils.data.DataLoader): DataLoader containing training data.
-        criterion (torch.nn.Module): Loss function (e.g., CrossEntropyLoss).
-        optimizer (torch.optim.Optimizer): Optimization algorithm (e.g., Adam, SGD).
-
-    Returns:
-        tuple: Average training loss and training accuracy (in percentage).
-    """
-    model.train()  # Set model to training mode
-    total_loss = 0  # Initialize total loss for the epoch
-    correct = 0  # Initialize count of correctly classified samples
-    total = 0  # Initialize total number of samples
-
-    for inputs, targets in train_loader:  # Iterate over training batches
-        inputs, targets = inputs.to(device), targets.to(device)  # Move data to the GPU or CPU
-        optimizer.zero_grad()  # Clear previous gradients
-
-        outputs = model(inputs)  # Forward pass: compute predictions
-        loss = criterion(outputs, targets)  # Compute loss
-
-        loss.backward()  # Backward pass: compute gradients
-        optimizer.step()  # Update model weights
-
-        total_loss += loss.item()  # Accumulate batch loss
-        _, predicted = torch.max(outputs, 1)  # Get predicted class indices
-        correct += (predicted == targets).sum().item()  # Count correct predictions
-        total += targets.size(0)  # Count total samples
-
-    accuracy = 100 * correct / total  # Compute accuracy as percentage
-    return total_loss / len(train_loader), accuracy  # Return average loss and accuracy
-
-
-# Function to validate the model
-def validate(model, val_loader, criterion):
-    """
-    Evaluates the model performance on the validation dataset.
-
-    Args:
-        model (torch.nn.Module): The neural network model.
-        val_loader (torch.utils.data.DataLoader): DataLoader containing validation data.
-        criterion (torch.nn.Module): Loss function (e.g., CrossEntropyLoss).
-
-    Returns:
-        tuple: Average validation loss and validation accuracy (in percentage).
-    """
-    model.eval()  # Set model to evaluation mode
-    total_loss = 0  # Initialize total validation loss
-    correct = 0  # Initialize count of correctly classified samples
-    total = 0  # Initialize total number of samples
-
-    with torch.no_grad():  # Disable gradient computation for efficiency
-        for inputs, targets in val_loader:  # Iterate over validation batches
-            inputs, targets = inputs.to(device), targets.to(device)  # Move data to the GPU or CPU
-
-            outputs = model(inputs)  # Forward pass: compute predictions
-            loss = criterion(outputs, targets)  # Compute loss
-
-            total_loss += loss.item()  # Accumulate batch loss
-            _, predicted = torch.max(outputs, 1)  # Get predicted class indices
-            correct += (predicted == targets).sum().item()  # Count correct predictions
-            total += targets.size(0)  # Count total samples
-
-    accuracy = 100 * correct / total  # Compute accuracy as percentage
-    return total_loss / len(val_loader), accuracy  # Return average loss and accuracy
-
-
-import torch
-import torch.nn as nn
-import math
-
+# ═══════════════════════════════════════════════════════════════════════════
+#  MODEL  –  Temporal Gait Transformer
+# ═══════════════════════════════════════════════════════════════════════════
 
 class TGTModel(nn.Module):
     """
-    Temporal Gait Transformer (TGT) implementing the architecture described in the paper:
-    - Linear projection of per-timestep features to d_model
-    - Fixed sinusoidal positional encoding
-    - Learnable [CLS] token
-    - Transformer encoder stack
-    - LayerNorm on [CLS] followed by linear classification head
+    Architecture (from paper):
+      1.  Linear projection  →  d_model-dimensional embedding per timestep
+      2.  + fixed sinusoidal positional encoding
+      3.  Prepend learnable [CLS] token
+      4.  N × Transformer encoder layers  (multi-head self-attention + FFN w/ GELU)
+      5.  LayerNorm on [CLS] representation
+      6.  Linear  →  num_classes logits
     """
 
-    def __init__(
-        self,
-        num_features: int,
-        window_size: int,
-        num_classes: int = 5,
-        d_model: int = 128,
-        num_heads: int = 4,
-        num_layers: int = 2,
-        dim_feedforward: int = 512,
-        dropout: float = 0.1,
-    ):
+    def __init__(self, num_features, window_size, num_classes=5,
+                 d_model=128, num_heads=4, num_layers=2,
+                 dim_feedforward=512, dropout=0.1):
         super().__init__()
         self.num_features = num_features
         self.window_size = window_size
         self.d_model = d_model
 
-        # Per-timestep linear projection to 128-D embedding
         self.input_proj = nn.Linear(num_features, d_model)
 
-        # Fixed sinusoidal positional encoding (Window x d_model)
-        pe = self._generate_positional_encoding(window_size, d_model)
-        self.register_buffer("positional_encoding", pe, persistent=False)
+        pe = self._make_pe(window_size, d_model)
+        self.register_buffer("pe", pe, persistent=False)
 
-        # Learnable [CLS] token of shape (1, 1, d_model)
         self.cls_token = nn.Parameter(torch.zeros(1, 1, d_model))
 
-        # Transformer encoder stack
-        encoder_layer = nn.TransformerEncoderLayer(
+        enc_layer = nn.TransformerEncoderLayer(
             d_model=d_model,
             nhead=num_heads,
             dim_feedforward=dim_feedforward,
             dropout=dropout,
-            batch_first=False,  # we will use (S, B, E) format
+            batch_first=True,
             activation="gelu",
         )
-        self.transformer_encoder = nn.TransformerEncoder(
-            encoder_layer,
-            num_layers=num_layers,
-        )
-
+        self.encoder = nn.TransformerEncoder(enc_layer, num_layers=num_layers)
         self.cls_norm = nn.LayerNorm(d_model)
-        self.classifier = nn.Linear(d_model, num_classes)
+        self.head = nn.Linear(d_model, num_classes)
 
-        self._reset_parameters()
+        self._init_weights()
 
-    def _reset_parameters(self):
-        nn.init.normal_(self.cls_token, mean=0.0, std=0.02)
+    # ── helpers ──────────────────────────────────────────────────────────
+
+    def _init_weights(self):
+        nn.init.normal_(self.cls_token, std=0.02)
         nn.init.xavier_uniform_(self.input_proj.weight)
-        if self.input_proj.bias is not None:
-            nn.init.zeros_(self.input_proj.bias)
-        nn.init.xavier_uniform_(self.classifier.weight)
-        if self.classifier.bias is not None:
-            nn.init.zeros_(self.classifier.bias)
+        nn.init.zeros_(self.input_proj.bias)
+        nn.init.xavier_uniform_(self.head.weight)
+        nn.init.zeros_(self.head.bias)
 
     @staticmethod
-    def _generate_positional_encoding(window_size: int, d_model: int) -> torch.Tensor:
-        """
-        Standard sinusoidal positional encoding as described in the paper/text.
-        Returns a tensor of shape (window_size, d_model).
-        """
-        pe = torch.zeros(window_size, d_model)
-        position = torch.arange(0, window_size, dtype=torch.float).unsqueeze(1)
-        div_term = torch.exp(
-            torch.arange(0, d_model, 2, dtype=torch.float)
-            * (-math.log(10000.0) / d_model)
-        )
-        pe[:, 0::2] = torch.sin(position * div_term)
-        pe[:, 1::2] = torch.cos(position * div_term)
-        return pe  # (Window, d_model)
+    def _make_pe(length, d_model):
+        pe = torch.zeros(length, d_model)
+        pos = torch.arange(length, dtype=torch.float).unsqueeze(1)
+        div = torch.exp(torch.arange(0, d_model, 2, dtype=torch.float)
+                        * (-math.log(10000.0) / d_model))
+        pe[:, 0::2] = torch.sin(pos * div)
+        pe[:, 1::2] = torch.cos(pos * div)
+        return pe  # (length, d_model)
 
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
-        """
-        x: (batch_size, window_size, num_features)
-        returns logits: (batch_size, num_classes)
-        """
-        # Ensure expected shape
-        assert (
-            x.dim() == 3 and x.size(1) == self.window_size and x.size(2) == self.num_features
-        ), f"Expected input of shape (B, {self.window_size}, {self.num_features}), got {x.shape}"
+    # ── forward ──────────────────────────────────────────────────────────
 
-        # Linear projection to (B, W, d_model)
-        x = self.input_proj(x)
-
-        # Add sinusoidal positional encoding (broadcast over batch)
-        pe = self.positional_encoding.unsqueeze(0)  # (1, W, d_model)
-        x = x + pe
-
-        # Prepend [CLS] token: cls expanded to (B, 1, d_model)
-        cls_tokens = self.cls_token.expand(x.size(0), -1, -1)
-        x = torch.cat([cls_tokens, x], dim=1)  # (B, W+1, d_model)
-
-        # Transformer expects (S, B, E)
-        x = x.transpose(0, 1)  # (W+1, B, d_model)
-
-        x = self.transformer_encoder(x)  # (W+1, B, d_model)
-
-        # Take [CLS] token (position 0)
-        cls_rep = x[0]  # (B, d_model)
-        cls_rep = self.cls_norm(cls_rep)
-        logits = self.classifier(cls_rep)  # (B, num_classes)
-        return logits
+    def forward(self, x):
+        """x: (B, window_size, num_features) → logits (B, num_classes)"""
+        x = self.input_proj(x)                             # (B, W, d)
+        x = x + self.pe.unsqueeze(0)                       # add pos enc
+        cls = self.cls_token.expand(x.size(0), -1, -1)     # (B, 1, d)
+        x = torch.cat([cls, x], dim=1)                     # (B, W+1, d)
+        x = self.encoder(x)                                # (B, W+1, d)
+        cls_rep = self.cls_norm(x[:, 0, :])                # (B, d)
+        return self.head(cls_rep)                           # (B, C)
 
 
-# Instantiate Temporal Gait Transformer model
-my_ml_model = TGTModel(
-    num_features=feature_size,
-    window_size=window_size,
-    num_classes=5,
-    d_model=d_model,
-    num_heads=num_heads,
-    num_layers=num_layers,
-    dim_feedforward=dim_feedforward,
-    dropout=dropout,
-)
+# ═══════════════════════════════════════════════════════════════════════════
+#  TRAINING  /  EVALUATION  HELPERS
+# ═══════════════════════════════════════════════════════════════════════════
 
-import subprocess
-
-subprocess.run(["pip", "install", "torchinfo"], check=True)
-
-from torchinfo import summary
-
-# Print model summary (we pass (batch_size, window_size, feature_size))
-print(summary(my_ml_model, input_size=(batch_size, window_size, feature_size)))
-
-import torch.optim as optim
-import random
-
-# Local folder to save trained models and figures
-save_file_path = os.path.join(HOME, "Saved_model")
-figures_path = os.path.join(HOME, "figures")
-os.makedirs(save_file_path, exist_ok=True)
-os.makedirs(figures_path, exist_ok=True)
-
-device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-print(f"Using device: {device}")
-
-# Set a fixed random seed to ensure reproducibility in model training
-seed = 42
-torch.manual_seed(seed)
-torch.cuda.manual_seed(seed)
-np.random.seed(seed)
-random.seed(seed)
-
-# create DataLoader
-train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True)
-val_loader = DataLoader(val_dataset, batch_size=batch_size, shuffle=False)
-test_loader = DataLoader(test_dataset, batch_size=batch_size, shuffle=False)
-
-# CrossEntropyLoss with optimizer, and think is there anything more you can add
-criterion = nn.CrossEntropyLoss()
-optimizer = optim.Adam(my_ml_model.parameters(), lr=learning_rate)
-
-model = my_ml_model.to(device)
-
-# Initialize lists to store the losses and accuracies for plotting
-train_losses = []
-train_accuracies = []
-val_losses = []
-val_accuracies = []
-
-# main training loop
-for epoch in range(num_epochs):
-    train_loss, train_accuracy = train(model, train_loader, criterion, optimizer)
-    val_loss, val_accuracy = validate(model, val_loader, criterion)
-
-    # Store the results for plotting
-    train_losses.append(train_loss)
-    train_accuracies.append(train_accuracy)
-    val_losses.append(val_loss)
-    val_accuracies.append(val_accuracy)
-
-    print(f"Epoch [{epoch + 1}/{num_epochs}], ")
-    print(f"Train Loss: {train_loss:.4f}, Train Accuracy: {train_accuracy:.2f}%, ")
-    print(f"Val Loss: {val_loss:.4f}, Val Accuracy: {val_accuracy:.2f}%")
-
-# Save the model after training
-model_save_path = os.path.join(save_file_path, "gait_model.pth")
-torch.save(model, model_save_path)
-print(f"Model saved to {model_save_path}")
+def train_one_epoch(model, loader, criterion, optimizer, device):
+    model.train()
+    loss_sum, correct, total = 0.0, 0, 0
+    for x, y in loader:
+        x, y = x.to(device), y.to(device)
+        optimizer.zero_grad()
+        logits = model(x)
+        loss = criterion(logits, y)
+        loss.backward()
+        optimizer.step()
+        loss_sum += loss.item()
+        correct += (logits.argmax(1) == y).sum().item()
+        total += y.size(0)
+    return loss_sum / len(loader), 100.0 * correct / total
 
 
-import matplotlib.pyplot as plt
-
-# After training is done, plot the loss and accuracy curves
-# Plotting Loss Curves
-plt.figure(figsize=(12, 5))
-
-plt.subplot(1, 2, 1)  # Plot the loss curve
-plt.plot(range(1, num_epochs + 1), train_losses, label='Train Loss', color='blue')
-plt.plot(range(1, num_epochs + 1), val_losses, label='Validation Loss', color='red')
-plt.title('Loss Curve')
-plt.xlabel('Epoch')
-plt.ylabel('Loss')
-plt.legend()
-
-# Plotting Accuracy Curves
-plt.subplot(1, 2, 2)  # Plot the accuracy curve
-plt.plot(range(1, num_epochs + 1), train_accuracies, label='Train Accuracy', color='blue')
-plt.plot(range(1, num_epochs + 1), val_accuracies, label='Validation Accuracy', color='red')
-plt.title('Accuracy Curve')
-plt.xlabel('Epoch')
-plt.ylabel('Accuracy (%)')
-plt.legend()
-
-plt.tight_layout()
-loss_curves_path = os.path.join(figures_path, "train_val_curves.png")
-plt.savefig(loss_curves_path, dpi=150, bbox_inches="tight")
-plt.show()
-print(f"📊 Loss/accuracy curves saved to: {loss_curves_path}")
-
-def test(model, test_loader):
+@torch.no_grad()
+def evaluate(model, loader, criterion, device):
     model.eval()
-    correct = 0
-    total = 0
-    with torch.no_grad():
-        for inputs, targets in test_loader:
-            inputs, targets = inputs.to(device), targets.to(device)
-            outputs = model(inputs)
-            _, predicted = torch.max(outputs, 1)
-            correct += (predicted == targets).sum().item()
-            total += targets.size(0)
-
-    accuracy = 100 * correct / total
-    return accuracy
+    loss_sum, correct, total = 0.0, 0, 0
+    for x, y in loader:
+        x, y = x.to(device), y.to(device)
+        logits = model(x)
+        loss = criterion(logits, y)
+        loss_sum += loss.item()
+        correct += (logits.argmax(1) == y).sum().item()
+        total += y.size(0)
+    return loss_sum / len(loader), 100.0 * correct / total
 
 
-import torch
+@torch.no_grad()
+def predict_all(model, loader, device):
+    """Return (all_preds, all_labels) as numpy arrays."""
+    model.eval()
+    preds, labels = [], []
+    for x, y in loader:
+        x = x.to(device)
+        preds.append(model(x).argmax(1).cpu().numpy())
+        labels.append(y.numpy())
+    return np.concatenate(preds), np.concatenate(labels)
 
-# Select device: Use GPU if available, otherwise use CPU
-device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-# Define the path where the trained model is saved (same as save_file_path above)
-model_save_path = os.path.join(HOME, "Saved_model", "gait_model.pth")
+# ═══════════════════════════════════════════════════════════════════════════
+#  PLOTTING  HELPERS
+# ═══════════════════════════════════════════════════════════════════════════
+
+def plot_training_curves(train_losses, val_losses, train_accs, val_accs,
+                         save_path):
+    epochs = range(1, len(train_losses) + 1)
+    fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(13, 5))
+
+    ax1.plot(epochs, train_losses, label="Train Loss", color="royalblue")
+    ax1.plot(epochs, val_losses, label="Val Loss", color="crimson")
+    ax1.set_xlabel("Epoch"); ax1.set_ylabel("Loss")
+    ax1.set_title("Loss Curve"); ax1.legend(); ax1.grid(alpha=0.3)
+
+    ax2.plot(epochs, train_accs, label="Train Acc", color="royalblue")
+    ax2.plot(epochs, val_accs, label="Val Acc", color="crimson")
+    ax2.set_xlabel("Epoch"); ax2.set_ylabel("Accuracy (%)")
+    ax2.set_title("Accuracy Curve"); ax2.legend(); ax2.grid(alpha=0.3)
+
+    fig.tight_layout()
+    fig.savefig(save_path, dpi=150, bbox_inches="tight")
+    plt.close(fig)
+    print(f"  → saved {save_path}")
 
 
-# Load the trained model
-# 'weights_only=False' ensures that we are loading the entire model (structure + weights)
-model = torch.load(model_save_path, map_location=device, weights_only=False)
+def plot_confusion(model, loader, class_names, device, save_path,
+                   title="Confusion Matrix"):
+    preds, labels = predict_all(model, loader, device)
+    present = sorted(set(labels.tolist()))
+    names = [class_names[i] for i in present]
+    cm = confusion_matrix(labels, preds, labels=present)
+    cm_norm = cm.astype(float) / cm.sum(axis=1, keepdims=True)
 
-# Move the model to the selected device (GPU or CPU)
-model.to(device)
+    fig, ax = plt.subplots(figsize=(8, 6))
+    sns.heatmap(cm_norm, annot=True, fmt=".2f", cmap="Blues",
+                xticklabels=names, yticklabels=names, ax=ax)
+    ax.set_xlabel("Predicted"); ax.set_ylabel("True"); ax.set_title(title)
+    fig.tight_layout()
+    fig.savefig(save_path, dpi=150, bbox_inches="tight")
+    plt.close(fig)
+    print(f"  → saved {save_path}")
 
-# Evaluate the model on the test dataset
-test_accuracy = test(model, test_loader)
+    report = classification_report(
+        labels, preds, labels=present, target_names=names, zero_division=0
+    )
+    print(report)
+    return report
 
-# Print a detailed summary of the test results
-print("=" * 50)
-print("✅ Model Testing Completed!")
-print(f"📌 Model Path: {model_save_path}")
-print(f"📊 Test Dataset Accuracy: {test_accuracy:.2f}%")
-print("📌 Device Used:", device)
-print("=" * 50)
 
-import torch
-import numpy as np
-import matplotlib.pyplot as plt
-import seaborn as sns
-from sklearn.metrics import confusion_matrix, classification_report
+def plot_per_class_accuracy(model, loader, class_names, device, save_path):
+    preds, labels = predict_all(model, loader, device)
+    present = sorted(set(labels.tolist()))
+    names = [class_names[i] for i in present]
+    accs = []
+    for c in present:
+        mask = labels == c
+        accs.append(100.0 * (preds[mask] == c).sum() / mask.sum())
 
-def plot_confusion_matrix(model, test_loader, class_names):
-    """
-    Generates and plots a confusion matrix for the given model on the test dataset.
-
-    :param model: Trained PyTorch model
-    :param test_loader: DataLoader for test dataset
-    :param class_names: List of class names for labeling the confusion matrix
-    """
-    model.eval()  # Set model to evaluation mode
-
-    all_preds = []
-    all_test_labels = []
-
-    # Disable gradient calculation for efficiency
-    with torch.no_grad():
-        for inputs, labels in test_loader:
-            inputs, labels = inputs.to(device), labels.to(device)
-            outputs = model(inputs)
-            _, predicted = torch.max(outputs, 1)
-
-            all_preds.extend(predicted.cpu().numpy())  # Store predictions
-            all_test_labels.extend(labels.cpu().numpy())  # Store true labels
-
-    # Compute the confusion matrix
-    cm = confusion_matrix(all_test_labels, all_preds)
-
-    # Normalize confusion matrix (convert to percentage)
-    cm_normalized = cm.astype('float') / cm.sum(axis=1)[:, np.newaxis]
-
-    # Plot the confusion matrix using Seaborn
-    plt.figure(figsize=(8, 6))
-    sns.heatmap(cm_normalized, annot=True, fmt=".2f", cmap="Blues", xticklabels=class_names, yticklabels=class_names)
-    plt.xlabel("Predicted Label")
-    plt.ylabel("True Label")
-    plt.title("Confusion Matrix")
-    confusion_path = os.path.join(figures_path, "confusion_matrix.png")
-    plt.savefig(confusion_path, dpi=150, bbox_inches="tight")
-    plt.show()
-    print(f"📊 Confusion matrix saved to: {confusion_path}")
-
-    # Print classification report
-    print("Classification Report:\n", classification_report(all_test_labels, all_preds, target_names=class_names, zero_division=0))
-
-# Define class names (modify based on your dataset)
-class_names = ["Normal_walking", "Injury_walking", "Stepping", "Swaying", "Jumping"]
-
-# Call the function to plot the confusion matrix
-plot_confusion_matrix(model, test_loader, class_names)
-
+    fig, ax = plt.subplots(figsize=(8, 5))
+    bars = ax.bar(names, accs, color="steelblue", edgecolor="black")
+    for b, a in zip(bars, accs):
+        ax.text(b.get_x() + b.get_width() / 2, b.get_height() + 0.5,
+                f"{a:.1f}%", ha="center", va="bottom", fontsize=10)
+    ax.set_ylim(0, 110)
+    ax.set_ylabel("Accuracy (%)")
+    ax.set_title("Per-Class Accuracy")
+    ax.grid(axis="y", alpha=0.3)
+    fig.tight_layout()
+    fig.savefig(save_path, dpi=150, bbox_inches="tight")
+    plt.close(fig)
+    print(f"  → saved {save_path}")
