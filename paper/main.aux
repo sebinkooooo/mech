@@ -9,28 +9,31 @@
 \@writefile{toc}{\contentsline {subsection}{\numberline {1.1}Data Types}{1}{subsection.1.1}\protected@file@percent }
 \@writefile{toc}{\contentsline {subsection}{\numberline {1.2}Separating Input Data}{1}{subsection.1.2}\protected@file@percent }
 \@writefile{toc}{\contentsline {subsection}{\numberline {1.3}Sampling Rate}{1}{subsection.1.3}\protected@file@percent }
-\@writefile{toc}{\contentsline {subsection}{\numberline {1.4}Windowing}{1}{subsection.1.4}\protected@file@percent }
-\@writefile{toc}{\contentsline {subsection}{\numberline {1.5}Attaching Outcomes}{2}{subsection.1.5}\protected@file@percent }
-\@writefile{toc}{\contentsline {subsection}{\numberline {1.6}Split}{2}{subsection.1.6}\protected@file@percent }
+\@writefile{toc}{\contentsline {paragraph}{Note on upsampling correction.}{2}{section*.2}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {1.4}Windowing}{2}{subsection.1.4}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {1.5}Per-Window Normalisation}{2}{subsection.1.5}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {1.6}Attaching Outcomes}{2}{subsection.1.6}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {1.7}Split}{2}{subsection.1.7}\protected@file@percent }
 \@writefile{toc}{\contentsline {section}{\numberline {2}Methodology}{2}{section.2}\protected@file@percent }
 \@writefile{toc}{\contentsline {subsection}{\numberline {2.1}Linear Projection to 128 Dimensions}{2}{subsection.2.1}\protected@file@percent }
-\@writefile{toc}{\contentsline {subsection}{\numberline {2.2}Positional Encoding}{2}{subsection.2.2}\protected@file@percent }
-\@writefile{toc}{\contentsline {subsection}{\numberline {2.3}Classification Token}{2}{subsection.2.3}\protected@file@percent }
-\@writefile{toc}{\contentsline {subsection}{\numberline {2.4}Transformer Encoder}{2}{subsection.2.4}\protected@file@percent }
-\@writefile{toc}{\contentsline {subsubsection}{\numberline {2.4.1}Multi Head Self Attention}{2}{subsubsection.2.4.1}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {2.2}Positional Encoding}{3}{subsection.2.2}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {2.3}Classification Token}{3}{subsection.2.3}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {2.4}Transformer Encoder}{3}{subsection.2.4}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsubsection}{\numberline {2.4.1}Multi Head Self Attention}{3}{subsubsection.2.4.1}\protected@file@percent }
 \@writefile{toc}{\contentsline {subsubsection}{\numberline {2.4.2}Feed Forward Network}{3}{subsubsection.2.4.2}\protected@file@percent }
 \@writefile{toc}{\contentsline {subsection}{\numberline {2.5}Layer Normalisation and Classification Head}{3}{subsection.2.5}\protected@file@percent }
-\@writefile{toc}{\contentsline {subsection}{\numberline {2.6}Training Configuration}{3}{subsection.2.6}\protected@file@percent }
-\@writefile{toc}{\contentsline {subsection}{\numberline {2.7}Model Summary}{3}{subsection.2.7}\protected@file@percent }
-\@writefile{toc}{\contentsline {section}{\numberline {3}Evaluation and Results}{3}{section.3}\protected@file@percent }
-\@writefile{lot}{\contentsline {table}{\numberline {1}{\ignorespaces Activity classes used for supervised learning. Each 0.33\,s window is assigned one of five class IDs according to the folder name of the source recording, following the mapping implemented in the code.}}{4}{table.1}\protected@file@percent }
-\newlabel{tab:activity-classes}{{1}{4}{Activity classes used for supervised learning. Each 0.33\,s window is assigned one of five class IDs according to the folder name of the source recording, following the mapping implemented in the code}{table.1}{}}
-\@writefile{lot}{\contentsline {table}{\numberline {2}{\ignorespaces Training hyperparameters used for TGT.}}{4}{table.2}\protected@file@percent }
-\newlabel{tab:training-params}{{2}{4}{Training hyperparameters used for TGT}{table.2}{}}
-\@writefile{lot}{\contentsline {table}{\numberline {3}{\ignorespaces TGT model architecture summary.}}{4}{table.3}\protected@file@percent }
-\newlabel{tab:model-params}{{3}{4}{TGT model architecture summary}{table.3}{}}
-\@writefile{lot}{\contentsline {table}{\numberline {4}{\ignorespaces Overview of per-timestep insole features, their numeric ranges, and element indices in the raw data vector.}}{5}{table.4}\protected@file@percent }
-\newlabel{tab:insole-features}{{4}{5}{Overview of per-timestep insole features, their numeric ranges, and element indices in the raw data vector}{table.4}{}}
-\@writefile{lot}{\contentsline {table}{\numberline {5}{\ignorespaces Subset of insole signals retained for model input. We keep per-timestep plantar pressure, linear acceleration, and fused orientation (quaternions) for each foot, as these jointly capture contact mechanics, dynamic motion, and foot pose. Redundant timestamps, raw gyroscope/magnetometer channels, and battery state are excluded from the learning pipeline.}}{6}{table.5}\protected@file@percent }
-\newlabel{tab:insole-features-selected}{{5}{6}{Subset of insole signals retained for model input. We keep per-timestep plantar pressure, linear acceleration, and fused orientation (quaternions) for each foot, as these jointly capture contact mechanics, dynamic motion, and foot pose. Redundant timestamps, raw gyroscope/magnetometer channels, and battery state are excluded from the learning pipeline}{table.5}{}}
-\gdef \@abspage@last{6}
+\@writefile{toc}{\contentsline {subsection}{\numberline {2.6}Training Configuration}{4}{subsection.2.6}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {2.7}Data Augmentation}{4}{subsection.2.7}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {2.8}Model Summary}{4}{subsection.2.8}\protected@file@percent }
+\@writefile{toc}{\contentsline {section}{\numberline {3}Evaluation and Results}{4}{section.3}\protected@file@percent }
+\@writefile{lot}{\contentsline {table}{\numberline {1}{\ignorespaces Activity classes used for supervised learning. Each 0.33\,s window is assigned one of five class IDs according to the folder name of the source recording, following the mapping implemented in the code.}}{5}{table.1}\protected@file@percent }
+\newlabel{tab:activity-classes}{{1}{5}{Activity classes used for supervised learning. Each 0.33\,s window is assigned one of five class IDs according to the folder name of the source recording, following the mapping implemented in the code}{table.1}{}}
+\@writefile{lot}{\contentsline {table}{\numberline {2}{\ignorespaces Training hyperparameters used for TGT.}}{5}{table.2}\protected@file@percent }
+\newlabel{tab:training-params}{{2}{5}{Training hyperparameters used for TGT}{table.2}{}}
+\@writefile{lot}{\contentsline {table}{\numberline {3}{\ignorespaces TGT model architecture summary.}}{5}{table.3}\protected@file@percent }
+\newlabel{tab:model-params}{{3}{5}{TGT model architecture summary}{table.3}{}}
+\@writefile{lot}{\contentsline {table}{\numberline {4}{\ignorespaces Overview of per-timestep insole features, their numeric ranges, and element indices in the raw data vector.}}{6}{table.4}\protected@file@percent }
+\newlabel{tab:insole-features}{{4}{6}{Overview of per-timestep insole features, their numeric ranges, and element indices in the raw data vector}{table.4}{}}
+\@writefile{lot}{\contentsline {table}{\numberline {5}{\ignorespaces Subset of insole signals retained for model input. We keep per-timestep plantar pressure, linear acceleration, and fused orientation (quaternions) for each foot, as these jointly capture contact mechanics, dynamic motion, and foot pose. Redundant timestamps, raw gyroscope/magnetometer channels, and battery state are excluded from the learning pipeline.}}{7}{table.5}\protected@file@percent }
+\newlabel{tab:insole-features-selected}{{5}{7}{Subset of insole signals retained for model input. We keep per-timestep plantar pressure, linear acceleration, and fused orientation (quaternions) for each foot, as these jointly capture contact mechanics, dynamic motion, and foot pose. Redundant timestamps, raw gyroscope/magnetometer channels, and battery state are excluded from the learning pipeline}{table.5}{}}
+\gdef \@abspage@last{7}
