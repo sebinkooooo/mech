@@ -150,6 +150,7 @@ Label smoothing & 0.1 \\
 Gradient clipping & Max norm 1.0 \\
 Loss weighting & Inverse class frequency \\
 Training sampler & Weighted random (oversample minority) \\
+Mixup $\alpha$ & 0.2 \\
 \bottomrule
 \end{tabular}
 \caption{Training hyperparameters used for TGT.}
@@ -171,6 +172,8 @@ Because training data comes from a small number of subjects, we apply aggressive
 \end{enumerate}
 
 Augmentation is applied online during training only; validation and evaluation data are not augmented.
+
+In addition to these per-window transforms, we apply \textbf{mixup} at the batch level during training. For each mini-batch, we sample a mixing coefficient $\lambda \sim \text{Beta}(\alpha, \alpha)$ with $\alpha = 0.2$ and blend each input window with a randomly paired window from the same batch: $\tilde{x} = \lambda\, x_i + (1 - \lambda)\, x_j$. The loss is computed as $\lambda\, \mathcal{L}(f(\tilde{x}),\, y_i) + (1 - \lambda)\, \mathcal{L}(f(\tilde{x}),\, y_j)$. With $\alpha = 0.2$ the mixing is usually mild (most $\lambda$ values are close to 0 or 1), but it still smooths decision boundaries and reduces the tendency to memorise individual training windows.
 
 \subsection{Model Summary}
 

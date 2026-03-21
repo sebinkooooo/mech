@@ -418,14 +418,34 @@ class TGTModel(nn.Module):
 # ═══════════════════════════════════════════════════════════════════════════
 
 def train_one_epoch(model, loader, criterion, optimizer, device,
-                    max_grad_norm=1.0):
+                    max_grad_norm=1.0, mixup_alpha=0.0):
+    """
+    If mixup_alpha > 0, applies mixup: each mini-batch is blended with a
+    shuffled copy of itself using a Beta(alpha, alpha) mixing coefficient.
+    The loss is computed against both original and shuffled targets,
+    weighted by the mixing coefficient.
+    """
     model.train()
     loss_sum, correct, total = 0.0, 0, 0
+    use_mixup = mixup_alpha > 0.0
+
     for x, y in loader:
         x, y = x.to(device), y.to(device)
+
+        if use_mixup:
+            lam = np.random.beta(mixup_alpha, mixup_alpha)
+            idx = torch.randperm(x.size(0), device=device)
+            x = lam * x + (1 - lam) * x[idx]
+            y_a, y_b = y, y[idx]
+
         optimizer.zero_grad()
         logits = model(x)
-        loss = criterion(logits, y)
+
+        if use_mixup:
+            loss = lam * criterion(logits, y_a) + (1 - lam) * criterion(logits, y_b)
+        else:
+            loss = criterion(logits, y)
+
         loss.backward()
         nn.utils.clip_grad_norm_(model.parameters(), max_grad_norm)
         optimizer.step()
