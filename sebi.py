@@ -312,6 +312,13 @@ def compute_class_weights(labels, num_classes):
     return torch.tensor(weights, dtype=torch.float32)
 
 
+def make_sample_weights(labels):
+    """Per-sample weights for WeightedRandomSampler (inverse class frequency)."""
+    counts = np.bincount(labels)
+    class_weight = 1.0 / np.maximum(counts, 1).astype(np.float64)
+    return torch.tensor(class_weight[labels], dtype=torch.float64)
+
+
 # ═══════════════════════════════════════════════════════════════════════════
 #  MODEL  –  Temporal Gait Transformer
 # ═══════════════════════════════════════════════════════════════════════════
