@@ -273,17 +273,32 @@ class GaitDataset(Dataset):
 
     @staticmethod
     def _augment(x):
-        """Gaussian jitter + random amplitude scaling + random time masking."""
-        # Gaussian noise (std 0.05 relative to normalized data)
-        x = x + torch.randn_like(x) * 0.05
-        # Random per-feature amplitude scaling in [0.8, 1.2]
-        scale = 0.8 + 0.4 * torch.rand(x.shape[-1])
+        """Aggressive augmentation to improve cross-subject generalisation."""
+        w, f = x.shape
+
+        # 1. Gaussian noise — stronger to blur subject-specific patterns
+        x = x + torch.randn_like(x) * 0.15
+
+        # 2. Per-channel random scaling — simulates different body weight,
+        #    sensor sensitivity, and foot–sensor contact across subjects
+        scale = 0.5 + 1.0 * torch.rand(f)          # [0.5, 1.5]
         x = x * scale
-        # Random time masking: zero out 1-3 consecutive timesteps
-        w = x.shape[0]
-        mask_len = torch.randint(1, 4, (1,)).item()
+
+        # 3. Channel dropout — randomly zero out ~20% of features to
+        #    prevent reliance on any single sensor
+        chan_mask = torch.rand(f) > 0.2              # keep 80%
+        x = x * chan_mask.float()
+
+        # 4. Time masking — zero out a contiguous block (up to ~15% of window)
+        mask_len = torch.randint(1, max(2, w // 7), (1,)).item()
         start = torch.randint(0, max(1, w - mask_len), (1,)).item()
         x[start:start + mask_len] = 0.0
+
+        # 5. Random time shift — circularly roll the window by a few steps
+        #    to prevent the model from relying on absolute position
+        shift = torch.randint(-w // 8, w // 8 + 1, (1,)).item()
+        x = torch.roll(x, shifts=shift, dims=0)
+
         return x
 
 
