@@ -318,29 +318,39 @@ def compute_class_weights(labels, num_classes):
 
 class TGTModel(nn.Module):
     """
-    Architecture (from paper):
-      1.  Linear projection  →  d_model-dimensional embedding per timestep
-      2.  + fixed sinusoidal positional encoding
-      3.  Prepend learnable [CLS] token
-      4.  N × Transformer encoder layers  (multi-head self-attention + FFN w/ GELU)
-      5.  LayerNorm on [CLS] representation
-      6.  Linear  →  num_classes logits
+    CNN-Transformer hybrid for gait classification.
+
+    Architecture:
+      1.  1D CNN stem (two conv layers) extracts local temporal patterns
+          like heel-strike and toe-off phases — these are more subject-
+          invariant than raw sensor values.
+      2.  + sinusoidal positional encoding
+      3.  N × Transformer encoder layers capture longer-range gait dynamics
+      4.  Mean pooling over timesteps (more robust than CLS token with
+          limited training subjects)
+      5.  Classification head with LayerNorm + dropout
     """
 
     def __init__(self, num_features, window_size, num_classes=5,
-                 d_model=128, num_heads=4, num_layers=2,
-                 dim_feedforward=512, dropout=0.1):
+                 d_model=64, num_heads=4, num_layers=2,
+                 dim_feedforward=256, dropout=0.3):
         super().__init__()
-        self.num_features = num_features
-        self.window_size = window_size
         self.d_model = d_model
 
-        self.input_proj = nn.Linear(num_features, d_model)
+        # 1D CNN stem — local temporal feature extraction
+        self.conv_stem = nn.Sequential(
+            nn.Conv1d(num_features, d_model, kernel_size=7, padding=3),
+            nn.BatchNorm1d(d_model),
+            nn.GELU(),
+            nn.Dropout(dropout),
+            nn.Conv1d(d_model, d_model, kernel_size=5, padding=2),
+            nn.BatchNorm1d(d_model),
+            nn.GELU(),
+            nn.Dropout(dropout),
+        )
 
         pe = self._make_pe(window_size, d_model)
         self.register_buffer("pe", pe, persistent=False)
-
-        self.cls_token = nn.Parameter(torch.zeros(1, 1, d_model))
 
         enc_layer = nn.TransformerEncoderLayer(
             d_model=d_model,
@@ -351,19 +361,27 @@ class TGTModel(nn.Module):
             activation="gelu",
         )
         self.encoder = nn.TransformerEncoder(enc_layer, num_layers=num_layers)
-        self.cls_norm = nn.LayerNorm(d_model)
-        self.head = nn.Linear(d_model, num_classes)
+
+        self.head = nn.Sequential(
+            nn.LayerNorm(d_model),
+            nn.Dropout(dropout),
+            nn.Linear(d_model, num_classes),
+        )
 
         self._init_weights()
 
     # ── helpers ──────────────────────────────────────────────────────────
 
     def _init_weights(self):
-        nn.init.normal_(self.cls_token, std=0.02)
-        nn.init.xavier_uniform_(self.input_proj.weight)
-        nn.init.zeros_(self.input_proj.bias)
-        nn.init.xavier_uniform_(self.head.weight)
-        nn.init.zeros_(self.head.bias)
+        for m in self.modules():
+            if isinstance(m, nn.Conv1d):
+                nn.init.kaiming_normal_(m.weight, nonlinearity="linear")
+                if m.bias is not None:
+                    nn.init.zeros_(m.bias)
+            elif isinstance(m, nn.Linear):
+                nn.init.xavier_uniform_(m.weight)
+                if m.bias is not None:
+                    nn.init.zeros_(m.bias)
 
     @staticmethod
     def _make_pe(length, d_model):
@@ -373,26 +391,27 @@ class TGTModel(nn.Module):
                         * (-math.log(10000.0) / d_model))
         pe[:, 0::2] = torch.sin(pos * div)
         pe[:, 1::2] = torch.cos(pos * div)
-        return pe  # (length, d_model)
+        return pe
 
     # ── forward ──────────────────────────────────────────────────────────
 
     def forward(self, x):
         """x: (B, window_size, num_features) → logits (B, num_classes)"""
-        x = self.input_proj(x)                             # (B, W, d)
-        x = x + self.pe.unsqueeze(0)                       # add pos enc
-        cls = self.cls_token.expand(x.size(0), -1, -1)     # (B, 1, d)
-        x = torch.cat([cls, x], dim=1)                     # (B, W+1, d)
-        x = self.encoder(x)                                # (B, W+1, d)
-        cls_rep = self.cls_norm(x[:, 0, :])                # (B, d)
-        return self.head(cls_rep)                           # (B, C)
+        x = x.transpose(1, 2)                   # (B, F, W) for Conv1d
+        x = self.conv_stem(x)                    # (B, d, W)
+        x = x.transpose(1, 2)                   # (B, W, d)
+        x = x + self.pe.unsqueeze(0)            # positional encoding
+        x = self.encoder(x)                      # (B, W, d)
+        x = x.mean(dim=1)                       # mean pool → (B, d)
+        return self.head(x)                      # (B, C)
 
 
 # ═══════════════════════════════════════════════════════════════════════════
 #  TRAINING  /  EVALUATION  HELPERS
 # ═══════════════════════════════════════════════════════════════════════════
 
-def train_one_epoch(model, loader, criterion, optimizer, device):
+def train_one_epoch(model, loader, criterion, optimizer, device,
+                    max_grad_norm=1.0):
     model.train()
     loss_sum, correct, total = 0.0, 0, 0
     for x, y in loader:
@@ -401,6 +420,7 @@ def train_one_epoch(model, loader, criterion, optimizer, device):
         logits = model(x)
         loss = criterion(logits, y)
         loss.backward()
+        nn.utils.clip_grad_norm_(model.parameters(), max_grad_norm)
         optimizer.step()
         loss_sum += loss.item()
         correct += (logits.argmax(1) == y).sum().item()
