@@ -140,12 +140,16 @@ def load_and_window(data_dir, feature_columns, label_mapping,
     Walk *data_dir* (expects sub-folders whose names contain a label key),
     preprocess every CSV, and return windowed numpy arrays.
 
-    Returns (features, labels) as numpy arrays.
+    Returns (features, labels, file_ids) as numpy arrays.
+    ``file_ids`` maps each window back to the source CSV so that
+    train/val/test splits can be made at the *file* level, preventing
+    data leakage from overlapping windows.
     """
-    all_features, all_labels = [], []
+    all_features, all_labels, all_file_ids = [], [], []
     if not os.path.isdir(data_dir):
         raise FileNotFoundError(f"{data_dir} does not exist")
 
+    file_counter = 0
     for folder_name in sorted(os.listdir(data_dir)):
         folder_path = os.path.join(data_dir, folder_name)
         if not os.path.isdir(folder_path):
@@ -164,9 +168,40 @@ def load_and_window(data_dir, feature_columns, label_mapping,
                     for s in range(0, n - window_size + 1, stride):
                         all_features.append(feats.iloc[s : s + window_size].values)
                         all_labels.append(label_id)
+                        all_file_ids.append(file_counter)
+                    file_counter += 1
                 break  # matched keyword; no need to check remaining
 
-    return np.array(all_features, dtype=np.float32), np.array(all_labels, dtype=np.int64)
+    return (np.array(all_features, dtype=np.float32),
+            np.array(all_labels, dtype=np.int64),
+            np.array(all_file_ids, dtype=np.int64))
+
+
+def split_by_file(file_ids, train_ratio=0.8, val_ratio=0.1, seed=42):
+    """
+    Split window indices so that *all* windows from the same source CSV
+    stay in the same partition.  This prevents data leakage caused by
+    overlapping sliding windows ending up in different splits.
+
+    Returns (train_idx, val_idx, test_idx) as numpy index arrays.
+    """
+    rng = np.random.RandomState(seed)
+    unique_files = np.unique(file_ids)
+    rng.shuffle(unique_files)
+
+    n_files = len(unique_files)
+    n_train = int(train_ratio * n_files)
+    n_val = int(val_ratio * n_files)
+
+    train_files = set(unique_files[:n_train].tolist())
+    val_files = set(unique_files[n_train:n_train + n_val].tolist())
+    test_files = set(unique_files[n_train + n_val:].tolist())
+
+    train_idx = np.where(np.isin(file_ids, list(train_files)))[0]
+    val_idx = np.where(np.isin(file_ids, list(val_files)))[0]
+    test_idx = np.where(np.isin(file_ids, list(test_files)))[0]
+
+    return train_idx, val_idx, test_idx
 
 
 # ═══════════════════════════════════════════════════════════════════════════
