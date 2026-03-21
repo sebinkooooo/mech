@@ -24,15 +24,25 @@
 \@writefile{toc}{\contentsline {subsection}{\numberline {2.5}Training Configuration}{4}{subsection.2.5}\protected@file@percent }
 \@writefile{toc}{\contentsline {subsection}{\numberline {2.6}Data Augmentation}{4}{subsection.2.6}\protected@file@percent }
 \@writefile{toc}{\contentsline {subsection}{\numberline {2.7}Model Summary}{4}{subsection.2.7}\protected@file@percent }
-\@writefile{toc}{\contentsline {section}{\numberline {3}Evaluation and Results}{4}{section.3}\protected@file@percent }
-\@writefile{lot}{\contentsline {table}{\numberline {1}{\ignorespaces Activity classes used for supervised learning. Each 0.33\,s window is assigned one of five class IDs according to the folder name of the source recording, following the mapping implemented in the code.}}{5}{table.1}\protected@file@percent }
-\newlabel{tab:activity-classes}{{1}{5}{Activity classes used for supervised learning. Each 0.33\,s window is assigned one of five class IDs according to the folder name of the source recording, following the mapping implemented in the code}{table.1}{}}
-\@writefile{lot}{\contentsline {table}{\numberline {2}{\ignorespaces Training hyperparameters used for TGT.}}{5}{table.2}\protected@file@percent }
-\newlabel{tab:training-params}{{2}{5}{Training hyperparameters used for TGT}{table.2}{}}
-\@writefile{lot}{\contentsline {table}{\numberline {3}{\ignorespaces TGT model architecture summary.}}{5}{table.3}\protected@file@percent }
-\newlabel{tab:model-params}{{3}{5}{TGT model architecture summary}{table.3}{}}
-\@writefile{lot}{\contentsline {table}{\numberline {4}{\ignorespaces Overview of per-timestep insole features, their numeric ranges, and element indices in the raw data vector.}}{6}{table.4}\protected@file@percent }
-\newlabel{tab:insole-features}{{4}{6}{Overview of per-timestep insole features, their numeric ranges, and element indices in the raw data vector}{table.4}{}}
-\@writefile{lot}{\contentsline {table}{\numberline {5}{\ignorespaces Subset of insole signals retained for model input. We keep per-timestep plantar pressure, linear acceleration, and fused orientation (quaternions) for each foot, as these jointly capture contact mechanics, dynamic motion, and foot pose. Redundant timestamps, raw gyroscope/magnetometer channels, and battery state are excluded from the learning pipeline.}}{7}{table.5}\protected@file@percent }
-\newlabel{tab:insole-features-selected}{{5}{7}{Subset of insole signals retained for model input. We keep per-timestep plantar pressure, linear acceleration, and fused orientation (quaternions) for each foot, as these jointly capture contact mechanics, dynamic motion, and foot pose. Redundant timestamps, raw gyroscope/magnetometer channels, and battery state are excluded from the learning pipeline}{table.5}{}}
-\gdef \@abspage@last{7}
+\@writefile{toc}{\contentsline {section}{\numberline {3}Evaluation and Results}{5}{section.3}\protected@file@percent }
+\@writefile{toc}{\contentsline {section}{\numberline {4}Design Challenges and Reasoning}{5}{section.4}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {4.1}Data Leakage from Window-Level Splitting}{5}{subsection.4.1}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {4.2}Limited Subject Diversity}{5}{subsection.4.2}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {4.3}Class Imbalance}{5}{subsection.4.3}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {4.4}Architecture: CNN-Transformer Hybrid}{5}{subsection.4.4}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {4.5}Why a Small Model}{6}{subsection.4.5}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {4.6}Dual Normalisation}{6}{subsection.4.6}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {4.7}Mixup Augmentation}{6}{subsection.4.7}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {4.8}Training Stability}{6}{subsection.4.8}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {4.9}Comparison with Baseline MLP}{6}{subsection.4.9}\protected@file@percent }
+\@writefile{lot}{\contentsline {table}{\numberline {1}{\ignorespaces Activity classes used for supervised learning. Each 0.33\,s window is assigned one of five class IDs according to the folder name of the source recording, following the mapping implemented in the code.}}{7}{table.1}\protected@file@percent }
+\newlabel{tab:activity-classes}{{1}{7}{Activity classes used for supervised learning. Each 0.33\,s window is assigned one of five class IDs according to the folder name of the source recording, following the mapping implemented in the code}{table.1}{}}
+\@writefile{lot}{\contentsline {table}{\numberline {2}{\ignorespaces Training hyperparameters used for TGT.}}{7}{table.2}\protected@file@percent }
+\newlabel{tab:training-params}{{2}{7}{Training hyperparameters used for TGT}{table.2}{}}
+\@writefile{lot}{\contentsline {table}{\numberline {3}{\ignorespaces TGT model architecture summary.}}{7}{table.3}\protected@file@percent }
+\newlabel{tab:model-params}{{3}{7}{TGT model architecture summary}{table.3}{}}
+\@writefile{lot}{\contentsline {table}{\numberline {4}{\ignorespaces Overview of per-timestep insole features, their numeric ranges, and element indices in the raw data vector.}}{8}{table.4}\protected@file@percent }
+\newlabel{tab:insole-features}{{4}{8}{Overview of per-timestep insole features, their numeric ranges, and element indices in the raw data vector}{table.4}{}}
+\@writefile{lot}{\contentsline {table}{\numberline {5}{\ignorespaces Subset of insole signals retained for model input. We keep per-timestep plantar pressure, linear acceleration, and fused orientation (quaternions) for each foot, as these jointly capture contact mechanics, dynamic motion, and foot pose. Redundant timestamps, raw gyroscope/magnetometer channels, and battery state are excluded from the learning pipeline.}}{9}{table.5}\protected@file@percent }
+\newlabel{tab:insole-features-selected}{{5}{9}{Subset of insole signals retained for model input. We keep per-timestep plantar pressure, linear acceleration, and fused orientation (quaternions) for each foot, as these jointly capture contact mechanics, dynamic motion, and foot pose. Redundant timestamps, raw gyroscope/magnetometer channels, and battery state are excluded from the learning pipeline}{table.5}{}}
+\gdef \@abspage@last{9}

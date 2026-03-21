@@ -1,4 +1,4 @@
-This is pdfTeX, Version 3.141592653-2.6-1.40.27 (TeX Live 2025) (preloaded format=pdflatex 2025.12.18)  21 MAR 2026 19:47
+This is pdfTeX, Version 3.141592653-2.6-1.40.27 (TeX Live 2025) (preloaded format=pdflatex 2025.12.18)  21 MAR 2026 21:58
 entering extended mode
  restricted \write18 enabled.
  file:line:error style messages enabled.
@@ -737,22 +737,43 @@ Underfull \hbox (badness 4556) in paragraph at lines 19--19
  []
 
 )
+Underfull \hbox (badness 2261) in paragraph at lines 83--84
+\T1/lmr/m/n/10.95 (+20) The TGT is a lightweight hy-brid CNN-
+ []
+
+
 
 [2]
 
 
 
 [3{/usr/local/texlive/2025/texmf-dist/fonts/enc/dvips/lm/lm-mathex.enc}]
-Overfull \hbox (83.71063pt too wide) in paragraph at lines 137--155
+Overfull \hbox (83.71063pt too wide) in paragraph at lines 137--156
  [][] 
  []
 
 
 
 
-Overfull \hbox (58.03226pt too wide) in paragraph at lines 182--203
+Overfull \hbox (58.03226pt too wide) in paragraph at lines 185--206
  [][] 
  []
+
+
+
+[4]
+Underfull \hbox (badness 2310) in paragraph at lines 217--217
+[]\T1/lmr/bx/n/12 (+20) Data Leak-age from Window-
+ []
+
+LaTeX Font Info:    Trying to load font information for TS1+lmr on input line 229.
+(/usr/local/texlive/2025/texmf-dist/tex/latex/lm/ts1lmr.fd
+File: ts1lmr.fd 2015/05/01 v1.6.1 Font defs for Latin Modern
+)
+
+
+
+[5{/usr/local/texlive/2025/texmf-dist/fonts/enc/dvips/lm/lm-ts1.enc}]
 
 (./data_preprocessing/table.tex
 Underfull \hbox (badness 10000) in paragraph at lines 33--33
@@ -831,31 +852,41 @@ Underfull \hbox (badness 1348) in paragraph at lines 15--15
 
 )
 
-[4]
+[6]
 
 
 
-[5] [6] [7] (./main.aux)
+[7] [8] [9] (./main.aux)
  ***********
 LaTeX2e <2024-11-01> patch level 2
 L3 programming layer <2025-01-18>
  ***********
-Package rerunfilecheck Info: File `main.out' has not changed.
-(rerunfilecheck)             Checksum: F484FF5E56969F653B5242FE2841A131;2794.
+
+
+LaTeX Warning: Label(s) may have changed. Rerun to get cross-references right.
+
+
+Package rerunfilecheck Warning: File `main.out' has changed.
+(rerunfilecheck)                Rerun to get outlines right
+(rerunfilecheck)                or use package `bookmark'.
+
+Package rerunfilecheck Info: Checksums for `main.out':
+(rerunfilecheck)             Before: F484FF5E56969F653B5242FE2841A131;2794
+(rerunfilecheck)             After:  C317B762C02EBC72DEB8BDB31F75A281;4653.
  ) 
 Here is how much of TeX's memory you used:
- 18087 strings out of 473190
- 345833 string characters out of 5715799
- 772876 words of memory out of 5000000
- 40818 multiletter control sequences out of 15000+600000
- 659536 words of font info for 213 fonts, out of 8000000 for 9000
+ 18156 strings out of 473190
+ 347182 string characters out of 5715799
+ 768876 words of memory out of 5000000
+ 40852 multiletter control sequences out of 15000+600000
+ 660640 words of font info for 223 fonts, out of 8000000 for 9000
  1141 hyphenation exceptions out of 8191
- 75i,14n,79p,1650b,1068s stack positions out of 10000i,1000n,20000p,200000b,200000s
+ 75i,14n,79p,1703b,1068s stack positions out of 10000i,1000n,20000p,200000b,200000s
 </usr/local/texlive/2025/texmf-dist/fonts/type1/public/lm/lmbx10.pfb></usr/local/texlive/2025/texmf-dist/fonts/type1/public/lm/lmbx12.pfb></usr/local/texlive/2025/texmf-dist/fonts/type1/public/lm/lmex10.pfb></usr/local/texlive/2025/texmf-dist/fonts/type1/public/lm/lmmi10.pfb></usr/local/texlive/2025/texmf-dist/fonts/type1/public/lm/lmmi8.pfb></usr/local/texlive/2025/texmf-dist/fonts/type1/public/lm/lmr10.pfb></usr/local/texlive/2025/texmf-dist/fonts/type1/public/lm/lmr12.pfb></usr/local/texlive/2025/texmf-dist/fonts/type1/public/lm/lmr17.pfb></usr/local/texlive/2025/texmf-dist/fonts/type1/public/lm/lmr6.pfb></usr/local/texlive/2025/texmf-dist/fonts/type1/public/lm/lmr7.pfb></usr/local/texlive/2025/texmf-dist/fonts/type1/public/lm/lmr8.pfb></usr/local/texlive/2025/texmf-dist/fonts/type1/public/lm/lmri10.pfb></usr/local/texlive/2025/texmf-dist/fonts/type1/public/lm/lmsy10.pfb></usr/local/texlive/2025/texmf-dist/fonts/type1/public/lm/lmsy7.pfb></usr/local/texlive/2025/texmf-dist/fonts/type1/public/lm/lmsy8.pfb></usr/local/texlive/2025/texmf-dist/fonts/type1/public/lm/lmtt10.pfb></usr/local/texlive/2025/texmf-dist/fonts/type1/public/amsfonts/symbols/msbm10.pfb>
-Output written on main.pdf (7 pages, 323286 bytes).
+Output written on main.pdf (9 pages, 336007 bytes).
 PDF statistics:
- 253 PDF objects out of 1000 (max. 8388607)
- 203 compressed objects within 3 object streams
- 45 named destinations out of 1000 (max. 500000)
- 55961 words of extra memory for PDF output out of 61914 (max. 10000000)
+ 277 PDF objects out of 1000 (max. 8388607)
+ 224 compressed objects within 3 object streams
+ 57 named destinations out of 1000 (max. 500000)
+ 58009 words of extra memory for PDF output out of 61914 (max. 10000000)
 
