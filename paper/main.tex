@@ -40,55 +40,64 @@
 \maketitle
 
 \begin{abstract}
-We present the Temporal Gait Transformer (TGT), a classification model that takes raw smart insole sensor data and identifies five distinct walking activities: normal walking, injury walking, stepping, swaying, and jumping. The input data comes from pressure sensors, accelerometers, and orientation quaternions on both feet. After merging left and right insole streams into synchronised rows at \SI{60}{Hz}, we segment the recording into overlapping windows of 80 timesteps (1.33 seconds, roughly one full gait cycle) with a stride of 30. Each timestep carries 50 sensor features. Every window is independently z-score normalised per feature to remove subject-specific sensor baselines. The TGT uses a two-layer 1D convolutional stem (32 channels) to extract local temporal patterns such as heel-strike and toe-off phases, then passes the result through two Transformer encoder layers with two-head self-attention to capture longer-range gait dynamics. The output is obtained by mean-pooling across timesteps rather than a learnable classification token, which we found more stable given limited training subjects. The model is trained with label-smoothed weighted cross-entropy loss, mixup augmentation, and the AdamW optimiser with cosine annealing. Aggressive data augmentation (Gaussian jitter, per-channel scaling, channel dropout, temporal masking, and random time shifts) is applied during training to simulate cross-subject variability and reduce overfitting. All data splits are performed at the file level so that overlapping windows from the same recording never appear in both training and validation sets.
+We present the Temporal Gait Transformer (TGT), a lightweight CNN-Transformer model that classifies five walking activities (normal walking, injury walking, stepping, swaying, and jumping) from raw smart insole data. Each insole records 18 pressure values, 3 accelerometer axes, and 3 Euler orientation angles (roll, pitch, yaw), giving 24 channels per foot and 48 features per timestep after merging left and right streams at \SI{60}{Hz}. We segment each recording into overlapping windows of 80 timesteps (1.33\,s) with a stride of 30 and z-score normalise every window independently to remove subject-specific baselines. A two-layer 1D convolutional stem (32 channels) extracts local gait patterns such as heel-strike and toe-off phases, then two Transformer encoder layers with two-head self-attention capture longer-range dynamics across the gait cycle. Timestep representations are aggregated by mean pooling rather than a learnable classification token, which proved more stable with limited training subjects. Training uses label-smoothed weighted cross-entropy, a weighted random sampler to oversample minority classes, and five augmentation transforms (Gaussian jitter, per-channel scaling, channel dropout, temporal masking, and random time shifts). All splits are performed at the file level to prevent data leakage from overlapping windows.
 \end{abstract}
 
 \section{Data Preprocessing}
 
 \subsection{Data Types}
-Data is collected from smart insoles on both feet of each subject. At every time step, the insoles measure pressure at multiple locations and provide accelerometer, gyroscope, and magnetometer readings, along with a computed quaternion and an insole label (right or left). Redundant fields include internal time stamps for each sub-device and battery status. A detailed list of all per-timestep features is provided in Table~\ref{tab:insole-features} in the Appendix.
+Data is collected from smart insoles worn on both feet. At every timestep each insole records pressure at 18 locations, acceleration along 3 axes, gyroscope readings along 3 axes, magnetometer readings along 3 axes, a 4-component orientation quaternion, derived Euler angles (roll, pitch, yaw), and an insole identifier (left or right). Additional fields such as sub-device timestamps and battery status are also present but not used. A full list of raw fields is given in Table~\ref{tab:insole-features} in the Appendix.
 
-\subsection{Separating Input Data}
-The raw data for each walking condition is first separated into right and left insole streams using the insole identifier $ele\_36$. We then compare the time stamps of rows from the right and left insoles and match them into a single combined row when the difference in recording times satisfies the constraint $\delta t < 0.02$\,s. Rows that do not satisfy this constraint are discarded. We remove redundant sub-time fields and drop gyroscope and magnetometer readings, because this information is already captured by the quaternions. The resulting dataset, with all retained channels, is summarised in Table~\ref{tab:insole-features-selected} in the Appendix. Each remaining row is a full entry for both feet, containing 50 features in total: 18 pressure values, 3 accelerometer axes, and 4 quaternion components per foot.
+\subsection{Separating and Merging Input Data}
+Each CSV file contains interleaved rows from the left and right insoles. We split them using the insole identifier field (\texttt{ele\_36}: 1 for left, 0 for right). From each side we keep 24 channels: the 18 pressure sensors (\texttt{ele\_0} to \texttt{ele\_17}), the 3 accelerometer axes (\texttt{ele\_18}, \texttt{ele\_19}, \texttt{ele\_20}), and the 3 Euler orientation angles (\texttt{ele\_22} = roll, \texttt{ele\_23} = pitch, \texttt{ele\_24} = yaw). Gyroscope, magnetometer, and quaternion fields are dropped because the Euler angles already capture foot orientation in a more compact form.
+
+We then align left and right rows by timestamp using a nearest-match merge with a tolerance of $\delta t < 0.02$\,s. Row pairs that exceed this tolerance are discarded. The result is a single table where each row describes both feet simultaneously, with 48 features in total (24 per foot). The retained channels are listed in Table~\ref{tab:insole-features-selected} in the Appendix.
 
 \subsection{Sampling Rate}
-After merging, the data is resampled to a fixed \SI{60}{Hz}. If the merged stream has a frame rate below 60\,Hz we upsample by linear interpolation. If it is above 60\,Hz we downsample by selecting evenly spaced indices. This ensures that every recording, regardless of the original device clock, produces a uniform 60 samples per second stream.
+Different recordings arrive at different native frame rates depending on device clock drift and Bluetooth throughput. We resample every merged recording to a fixed \SI{60}{Hz}. Streams below 60\,Hz are upsampled by index-based linear interpolation; streams above 60\,Hz are downsampled by selecting evenly spaced indices. This guarantees that one row always represents exactly $1/60$\,s regardless of the original recording conditions.
 
 \paragraph{Note on upsampling correction.}
-An earlier version of the upsampling routine generated evenly spaced target timestamps and called \texttt{reindex} directly on the original data frame. Because the target timestamps almost never coincided exactly with the recorded timestamps (floating-point mismatch on ten-digit Unix epochs), the operation discarded virtually all original samples and left a single anchor point, causing \texttt{interpolate} to replicate one constant row across the entire recording. This affected 35 of 92 Injury\_walking training files and all four Group~10 recordings, whose native frame rate fell below \SI{60}{Hz}. The corrected implementation first takes the union of the original and target timestamp indices, interpolates over the combined index so that every original measurement serves as an anchor, and then selects the target timestamps. After this fix, all upsampled recordings contain the expected temporal variation.
+An earlier version of the upsampling routine generated evenly spaced target timestamps and called \texttt{reindex} directly on the original data frame. Because target timestamps almost never coincided exactly with recorded timestamps (floating-point mismatch on ten-digit Unix epochs), the operation discarded virtually all original samples and left a single anchor point, causing \texttt{interpolate} to produce constant rows. This affected 35 of 92 Injury\_walking training files and all four Group~10 recordings whose native frame rate fell below \SI{60}{Hz}. The corrected implementation first takes the union of original and target timestamp indices, interpolates over the combined index so every original measurement serves as an anchor, and then selects the target timestamps.
 
 \subsection{Windowing}
-We define a window parameter $W$ as the number of consecutive rows provided to the model. In our configuration we use $W = 80$, which corresponds to 1.33 seconds at \SI{60}{Hz}, enough to cover a full gait cycle with some margin. The stride between consecutive windows is set to $S = 30$, giving 62.5\% overlap. This overlap produces more training samples and ensures that transient gait events are captured even if they fall near a window boundary. Each window is therefore a matrix of shape $80 \times 50$.
+We segment each recording into fixed-length windows of $W = 80$ consecutive timesteps (1.33\,s at \SI{60}{Hz}), enough to cover roughly one full gait cycle. Consecutive windows are spaced by a stride of $S = 30$, giving 62.5\% overlap. The overlap increases the number of training samples and ensures that gait events near window boundaries still appear in full within at least one window. Each window is a matrix of shape $80 \times 48$.
 
 \subsection{Normalisation}
-We apply two layers of normalisation. First, a global z-score is computed per feature across the entire training set and applied to all data (training, validation, and evaluation). The mean and standard deviation are fit only on training windows to prevent information leakage. This brings all features onto a comparable scale.
+We normalise the data in two stages.
 
-Second, each window is independently z-score normalised per feature. For each window $\mathbf{X} \in \mathbb{R}^{W \times F}$, we compute the mean $\mu_f$ and standard deviation $\sigma_f$ of each feature $f$ across the $W$ timesteps and normalise:
+\textbf{Global z-score.} We compute the mean and standard deviation of each of the 48 features across all training windows and use these statistics to standardise every window (training, validation, and evaluation). Fitting statistics on training data only prevents information leakage. This step brings features such as pressure and acceleration onto a comparable numerical scale.
+
+\textbf{Per-window z-score.} After the global step, each window $\mathbf{X} \in \mathbb{R}^{W \times F}$ is independently normalised along the time axis:
 \begin{equation}
-\hat{x}_{t,f} = \frac{x_{t,f} - \mu_f}{\sigma_f + \varepsilon}
+\hat{x}_{t,f} = \frac{x_{t,f} - \mu_f}{\sigma_f + \varepsilon}, \qquad \varepsilon = 10^{-8}
 \end{equation}
-where $\varepsilon = 10^{-8}$. This removes subject-specific absolute sensor baselines (e.g.\ resting pressure levels and accelerometer offsets that vary with body weight, foot placement, and device calibration) so that the model learns from the temporal \emph{shape} of each window rather than its absolute magnitude.
+where $\mu_f$ and $\sigma_f$ are the mean and standard deviation of feature $f$ across the $W$ timesteps of that window. This removes subject-specific absolute baselines (resting pressure levels, accelerometer offsets from body weight or sensor placement) so the model learns from the temporal \emph{shape} of signals rather than their magnitude.
 
-\subsection{Attaching Outcomes}
-For each input window we attach a walking label from the following set of classes, summarised in Table~\ref{tab:activity-classes}:
+\subsection{Labels}
+Each window inherits the activity label of the folder it came from. The five classes are listed in Table~\ref{tab:activity-classes}:
 
 \input{data_preprocessing/table_2.tex}
 
-\subsection{Split}
-Because we use overlapping sliding windows, a naive random split would place near-identical windows into both the training and validation sets, inflating validation scores. To avoid this data leakage, we split at the \emph{file} level: all windows from the same CSV recording are assigned to the same partition. We use a 90/10 train/validation split. The validation set is used during training to monitor generalisation and select the best checkpoint via early stopping. All available data, including the Group~10 recordings, is included in the training pool to maximise subject diversity. Final evaluation is performed on a completely separate set of recordings not seen during training.
+\subsection{Train/Validation Split}
+Overlapping sliding windows from the same recording share most of their content. A naive random split would place near-identical windows into both training and validation sets, artificially inflating validation scores. We avoid this by splitting at the \emph{file} level: all windows extracted from a single CSV stay in the same partition.
+
+We use a 90/10 train/validation split over files. The validation set is used solely to monitor generalisation and select the best model checkpoint via early stopping. All available recordings, including Group~10 data, are included in the pool to maximise subject diversity. Final evaluation is performed on a completely separate set of recordings that are not seen during training.
 
 
 \section{Methodology}
 
-The TGT is a lightweight hybrid CNN-Transformer model. A 1D convolutional stem first extracts local temporal features from the raw sensor window into 32-dimensional representations, then a Transformer encoder captures longer-range dependencies across the gait cycle. The output is produced by mean-pooling across all timesteps rather than a learnable classification token, which we found more reliable when training data comes from only a handful of subjects. We describe each stage below.
+The TGT is a lightweight hybrid CNN-Transformer model. A convolutional stem first extracts local temporal features from the raw sensor window, then a Transformer encoder models longer-range dependencies across the gait cycle. Timestep representations are aggregated by mean pooling, and a linear head produces class logits. The full pipeline is illustrated by the stages below.
 
 \subsection{1D Convolutional Stem}
 
-The input to the model is a window of shape $W \times 50$, where each of the $W = 80$ rows is a single timestep with 50 sensor features. Rather than projecting each timestep independently through a linear layer, we first transpose the input to shape $50 \times W$ and apply two 1D convolutional layers along the time axis:
+The model receives a window of shape $W \times 48$ ($W = 80$ timesteps, 48 sensor features each). We transpose to $48 \times W$ and apply two 1D convolutions along the time axis:
+\begin{itemize}
+\item Layer 1: kernel size 7, maps 48 input channels to $d_{\text{model}} = 32$ channels.
+\item Layer 2: kernel size 5, maps 32 to 32 channels.
+\end{itemize}
+Both layers use same-padding so the temporal length stays at $W$. Each convolution is followed by batch normalisation, a GELU activation, and dropout (0.3).
 
-The first convolution uses a kernel size of 7 and maps the 50 input channels to $d_{\text{model}} = 32$ output channels. The second convolution uses a kernel size of 5 and maps 32 channels to 32. Both use same-padding so the temporal length stays at $W = 80$. Each convolution is followed by batch normalisation, a GELU activation, and dropout.
-
-The motivation for a convolutional stem is that gait signals contain local temporal patterns (the pressure wave from heel-strike to toe-off, the acceleration peak at foot contact) that are best captured by filters operating over small neighbourhoods. These local features tend to be more consistent across subjects than the raw sensor magnitudes, which vary with body weight, sensor placement, and foot shape. After the stem, we transpose back to shape $W \times 32$ for input to the Transformer.
+Gait signals contain short-range temporal patterns (the pressure wave from heel-strike to toe-off, the acceleration spike at foot contact) that are best captured by small convolutional filters. These local features are more consistent across subjects than raw sensor magnitudes, which vary with body weight, sensor placement, and foot shape. After the stem, we transpose back to $W \times 32$ for the Transformer.
 
 \subsection{Positional Encoding}
 
@@ -125,11 +134,11 @@ This pooled vector is passed through layer normalisation, dropout, and a fully c
 
 \subsection{Training Configuration}
 
-The model is trained with backpropagation using cross-entropy loss with label smoothing ($\alpha = 0.1$) between the predicted class probabilities and the ground-truth labels. Label smoothing prevents the model from becoming overconfident on the training set, which is especially useful when the number of distinct subjects is small.
+We use cross-entropy loss with label smoothing ($\alpha = 0.1$). Label smoothing softens the target distribution from a hard one-hot vector to a mixture that reserves a small probability for incorrect classes, preventing the model from becoming overconfident when the number of distinct training subjects is small.
 
-Because the training set is class-imbalanced (e.g.\ Swaying has roughly twice as many windows as Stepping), we address this at two levels. First, we weight the loss by the inverse class frequency so that under-represented activities receive proportionally higher gradients. Second, we use a weighted random sampler during training: each window is sampled with probability inversely proportional to the frequency of its class, so that every class is seen roughly equally often per epoch regardless of the original distribution. This combination of loss weighting and oversampling ensures that minority classes like Stepping receive sufficient training signal despite having far fewer recording sessions.
+The training set is class-imbalanced: Swaying has roughly twice as many windows as Stepping. We handle this at two levels. First, the loss is weighted by inverse class frequency so that errors on rare classes produce proportionally larger gradients. Second, a \textbf{weighted random sampler} draws windows with probability inversely proportional to class frequency, so every class is seen roughly equally often per epoch. Together these ensure that minority classes like Stepping receive enough training signal despite having fewer recording sessions.
 
-We use the AdamW optimiser with decoupled weight decay. Gradients are clipped to a maximum norm of 1.0 per step to prevent occasional large updates from destabilising training. The specific training parameters are listed in Table~\ref{tab:training-params}.
+We optimise with AdamW (decoupled weight decay). Gradients are clipped to a maximum norm of 1.0 per step to prevent occasional large updates from destabilising training. All training parameters are listed in Table~\ref{tab:training-params}.
 
 \begin{table}[ht]
 \centering
@@ -157,15 +166,15 @@ Mixup $\alpha$ & 0.2 \\
 \label{tab:training-params}
 \end{table}
 
-The learning rate starts at $5 \times 10^{-4}$ and is decayed following a cosine schedule over the full 150 epochs. Training stops early if validation accuracy does not improve for 80 consecutive epochs. We save the model checkpoint with the highest validation accuracy and use that checkpoint for all subsequent evaluation.
+The learning rate starts at $5 \times 10^{-4}$ and follows a cosine decay schedule over the full 150 epochs. If validation accuracy does not improve for 80 consecutive epochs, training stops early. The checkpoint with the highest validation accuracy is saved and used for all subsequent evaluation.
 
 \subsection{Data Augmentation}
 
-Because training data comes from a small number of subjects, we apply aggressive augmentation to each training window on every epoch to simulate the kind of variation expected from new subjects. The five transforms are:
+Training data comes from a small number of subjects, so the model risks memorising subject-specific patterns. We apply five augmentation transforms to each training window on every epoch to simulate the variation expected from unseen subjects:
 
 \begin{enumerate}
 \item \textbf{Gaussian jitter.} Additive noise sampled from $\mathcal{N}(0, 0.15^2)$ is added independently to every element of the window. This simulates sensor noise variation between recording sessions and devices.
-\item \textbf{Per-channel amplitude scaling.} Each of the 50 features is multiplied by an independent random factor drawn uniformly from $[0.5, 1.5]$. This forces the model to tolerate differences in sensor calibration and body weight across subjects.
+\item \textbf{Per-channel amplitude scaling.} Each of the 48 features is multiplied by an independent random factor drawn uniformly from $[0.5, 1.5]$. This forces the model to tolerate differences in sensor calibration and body weight across subjects.
 \item \textbf{Channel dropout.} Each feature channel is independently zeroed out with probability 0.2. This prevents the model from relying too heavily on any single sensor and improves robustness to occasional sensor failures.
 \item \textbf{Temporal masking.} A contiguous block of up to $\lfloor W/7 \rfloor$ timesteps (roughly 15\% of the window) is randomly selected and set to zero, acting as a regulariser that forces the model to use the full temporal context.
 \item \textbf{Random time shift.} The window is circularly shifted along the time axis by a random offset of up to $\pm W/8$ timesteps. This makes the model invariant to where exactly within the recording the gait event starts.
@@ -186,7 +195,7 @@ Table~\ref{tab:model-params} summarises the architectural choices of the TGT.
 \toprule
 \textbf{Component} & \textbf{Value} \\
 \midrule
-Input features per timestep & 50 \\
+Input features per timestep & 48 \\
 Window size ($W$) & 80 \\
 Stride ($S$) & 30 \\
 Conv stem & 2 layers (kernel 7, kernel 5) \\
@@ -216,57 +225,51 @@ Output classes & 5 \\
 
 \subsection{Data Leakage from Window-Level Splitting}
 
-The original training pipeline split data at the window level: individual sliding windows were randomly shuffled into train, validation, and test sets. Because windows overlap by a large margin (stride smaller than window size), near-identical windows ended up in both training and validation sets. This made validation accuracy look artificially high (above 87\%) while performance on genuinely unseen Group~10 data was around 37\%.
+An early version of the pipeline split data at the window level: windows were randomly shuffled into train, validation, and test sets. Because consecutive windows overlap (stride $< W$), near-identical windows ended up on both sides of the split. Validation accuracy appeared high ($>$87\%) but performance on genuinely unseen recordings was around 37\%.
 
-We fixed this by implementing file-level splitting (\texttt{split\_by\_file}). All windows from a single CSV recording stay in the same partition, so the model can never see overlapping segments during validation. This is also how we identified that the baseline MLP notebooks had the same leakage problem: their high reported accuracy was not trustworthy on truly unseen subjects.
+We solved this with file-level splitting: all windows from a single CSV recording stay in the same partition. The same leakage problem was present in the baseline MLP notebooks, meaning their reported evaluation accuracy was similarly inflated.
 
 \subsection{Limited Subject Diversity}
 
-The training dataset contains recordings from only a handful of distinct subjects. The model quickly memorised subject-specific quirks (resting pressure levels, body weight effects, sensor placement) rather than learning generalisable gait patterns. This is why it performed well internally but collapsed on new subjects.
-
-We addressed this through several layers:
+The training set contains recordings from only a handful of subjects. Without mitigation, the model memorises subject-specific quirks (resting pressure levels, body weight effects, sensor placement) rather than learning generalisable gait patterns. We addressed this with four complementary strategies:
 \begin{itemize}
-\item Incorporating Group~10 data into the training pool to add more subject diversity.
-\item Per-window z-score normalisation removes subject-specific absolute baselines so the model only sees the temporal shape of each signal, not its magnitude.
-\item Aggressive augmentation (five transforms) simulates the kind of variation a new subject would introduce: different noise levels, sensor sensitivity, missing channels, shifted timing.
-\item Small model capacity (32-dimensional embeddings, roughly 40k parameters versus the MLP's 800k) to limit the model's ability to memorise.
+\item Including Group~10 recordings in the training pool to increase subject diversity.
+\item Per-window z-score normalisation, which strips away absolute sensor baselines so the model sees only temporal shape.
+\item Aggressive augmentation (five transforms) that simulates the variation expected from new subjects.
+\item A deliberately small model (32-dimensional embeddings, ${\sim}$15k parameters) that has limited capacity to memorise.
 \end{itemize}
 
 \subsection{Class Imbalance}
 
-Stepping had far fewer recording sessions than classes like Swaying or Injury\_walking. With standard training, the model learned to mostly ignore Stepping because it could still achieve high overall accuracy by getting the majority classes right.
+Stepping has far fewer recording sessions than Swaying or Injury\_walking. Without correction the model learns to ignore it, since overall accuracy stays high by getting majority classes right.
 
-We addressed this at two levels. First, inverse-frequency loss weighting gives Stepping errors a proportionally larger gradient signal. Second, a weighted random sampler oversamples minority classes so that every class appears roughly equally often per epoch. This is stronger than loss weighting alone because it changes how often the model actually sees minority examples.
-
-Even with both fixes, Stepping remains the weakest class (F1 around 0.28 to 0.35) because it may genuinely be the most ambiguous activity from insole sensor data alone.
+We address this at two levels: inverse-frequency loss weighting (larger gradients for rare-class errors) and a weighted random sampler that oversamples minority classes so every class appears roughly equally often per epoch. Despite both fixes, Stepping remains the weakest class (F1 around 0.28--0.35), suggesting it may be genuinely ambiguous from insole pressure and orientation data alone.
 
 \subsection{Architecture: CNN-Transformer Hybrid}
 
-The original model was a pure Transformer with a linear projection per timestep and a learnable CLS token. This had two problems. A linear projection treats each timestep independently and misses local temporal patterns such as heel-strike to toe-off pressure waves and acceleration spikes at foot contact. The CLS token, being a single learnable vector, tended to overfit with so few training subjects.
+An earlier version used a pure Transformer with a per-timestep linear projection and a learnable CLS token. The linear projection treats each timestep independently and misses local temporal patterns (heel-strike pressure waves, acceleration spikes). The CLS token, a single learnable vector, overfitted quickly with so few training subjects.
 
-We replaced the linear projection with a 1D CNN stem (two convolutional layers, kernel sizes 7 and 5) that extracts local temporal features before the Transformer sees them. These local features (pressure wave shapes, acceleration peaks) are more consistent across subjects than raw sensor values. We replaced the CLS token with mean pooling, which is parameter-free and more stable with limited data.
+Replacing the linear projection with a 1D CNN stem lets the model extract local temporal features before the Transformer processes them. Replacing the CLS token with mean pooling removes a learnable component and produces a more stable summary with limited data.
 
-\subsection{Why a Small Model}
+\subsection{Model Size}
 
-The baseline MLP notebooks used roughly 800k parameters. With limited training subjects, a large model has enough capacity to memorise individual subjects rather than learn generalisable patterns. The MLP's high evaluation accuracy was an artefact of data leakage, not genuine generalisation. We deliberately kept the TGT small ($d_{\text{model}} = 32$, 2 heads, 2 layers, 128 FFN hidden dimension) to force the model to learn compact, transferable representations.
+The baseline MLP uses roughly 800k parameters. With few training subjects, a large model can memorise individual subjects rather than learn transferable patterns. We deliberately kept the TGT small ($d_{\text{model}} = 32$, 2 heads, 2 encoder layers, 128 FFN hidden dimension, ${\sim}$15k total parameters) to limit memorisation capacity and force compact representations.
 
 \subsection{Dual Normalisation}
 
-We apply normalisation twice. A global z-score (fit on the training set only) brings all features to comparable scales. A per-window z-score removes within-window absolute offsets so the model learns from relative temporal patterns, not absolute sensor magnitudes that vary per subject.
-
-This two-stage approach was motivated by the observation that subjects differ most in their baseline sensor readings (resting pressure, standing orientation), while the temporal dynamics of each activity are more consistent across subjects.
+A global z-score (fit on training data only) brings all 48 features onto a comparable scale. A subsequent per-window z-score removes the absolute offset within each window so the model learns from relative temporal patterns rather than subject-specific magnitudes. This two-stage approach targets the main source of cross-subject variation: baseline sensor readings (resting pressure, standing orientation) differ between individuals, while the temporal dynamics of each activity are more consistent.
 
 \subsection{Mixup Augmentation}
 
-After reaching roughly 91.3\% validation accuracy, we added mixup ($\alpha = 0.2$) to push further. Mixup blends pairs of training windows and their labels, smoothing decision boundaries. This caused training accuracy to drop to around 55--65\% (expected, since the model is evaluated against hard labels but trained on blended targets), while validation accuracy improved to 92.01\%. The gap between training and validation accuracy with mixup is normal and not a sign of a problem.
+We experimented with mixup ($\alpha = 0.2$), which blends pairs of training windows and their labels to smooth decision boundaries. Training accuracy drops to around 55--65\% under mixup because accuracy is measured against hard labels while training targets are blended. Validation accuracy improved from 91.3\% to 92.0\%. However, without cross-validation the 0.7 percentage point gain is within noise, so we treat mixup as optional.
 
 \subsection{Training Stability}
 
-Gradient clipping (max norm 1.0) prevents occasional large gradients from destabilising training, which was causing bumpy training curves. Label smoothing (0.1) prevents overconfident predictions, acting as a soft regulariser. A cosine annealing learning rate schedule with high patience (80 epochs) gives the model enough time to converge under heavy augmentation and mixup, which slow convergence. Early stopping on validation accuracy ensures we save the best generalising checkpoint rather than the most overfit one.
+Gradient clipping (max norm 1.0) prevents occasional large gradients from destabilising training, which otherwise produces bumpy loss curves. Label smoothing (0.1) acts as a soft regulariser by preventing overconfident predictions. Cosine annealing with generous patience (80 epochs) gives the model enough time to converge under heavy augmentation, which slows learning. Early stopping on validation accuracy ensures we keep the best-generalising checkpoint.
 
 \subsection{Comparison with Baseline MLP}
 
-The baseline MLP notebooks reported very high accuracy on their evaluation sets, but this was misleading due to window-level splitting. Their evaluation windows came from the same recording sessions as training windows, often overlapping by more than 50\%. The TGT with file-level splitting produces honest metrics on genuinely held-out recordings, which is why its numbers look lower but are more trustworthy.
+The baseline MLP notebooks report high evaluation accuracy, but their evaluation windows come from the same recording sessions as training windows (often overlapping by $>$50\% due to window-level splitting). The TGT with file-level splitting evaluates on genuinely held-out recordings. Its reported numbers are lower but reflect real generalisation performance.
 
 
 \appendix
