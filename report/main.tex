@@ -1,0 +1,174 @@
+\documentclass[10pt,a4paper,twocolumn]{article}
+
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage[english]{babel}
+\usepackage{lmodern}
+\usepackage{amsmath, amssymb}
+\usepackage{graphicx}
+\usepackage{booktabs}
+\usepackage{hyperref}
+\usepackage[margin=0.7in]{geometry}
+\usepackage{siunitx}
+\usepackage{tikz}
+\usepackage{pgfplots}
+\pgfplotsset{compat=1.18}
+\usetikzlibrary{arrows.meta, positioning, shapes.geometric, calc, fit, backgrounds}
+\usepackage{float}
+\usepackage{subcaption}
+\usepackage{enumitem}
+\usepackage{xcolor}
+\usepackage{listings}
+
+\lstdefinestyle{pythonstyle}{
+  language=Python,
+  basicstyle=\ttfamily\footnotesize,
+  breaklines=true,
+  frame=single,
+  numbers=left,
+  numberstyle=\tiny\color{gray},
+  keywordstyle=\color{blue!70!black},
+  commentstyle=\color{green!40!black},
+  stringstyle=\color{orange!50!black},
+  showstringspaces=false
+}
+
+\hypersetup{colorlinks=true, linkcolor=blue, citecolor=blue, urlcolor=blue}
+
+\title{Temporal Gait Transformer: Classifying Walking Activities from Smart Insole Data}
+\author{
+\small Sebastian Kot (\href{mailto:sebastian.kot@city.ac.uk}{sebastian.kot@city.ac.uk}) \and
+\small Mohammad Karimi (\href{mailto:mohammad.karimi.3@city.ac.uk}{mohammad.karimi.3@city.ac.uk}) \and
+\small Wadah Abdelaziz (\href{mailto:Wadah.abdelaziz@city.ac.uk}{Wadah.abdelaziz@city.ac.uk}) \and
+\small Mohammad Aqib Iqbal (\href{mailto:aqib.iqbal@city.ac.uk}{aqib.iqbal@city.ac.uk})
+}
+\date{\today}
+
+\begin{document}
+
+\maketitle
+
+The objective of this project was to train a deep-learning classifier that can identify walking styles from a smart insole device. After analysing the provided MLP baseline code, we decided to implement an architecture better suited to temporal data: a small CNN-Transformer hybrid.
+
+The MLP baseline takes a variable-length window of 48-feature rows (left + right foot) and flattens them into a single input vector. This removes any possibility of temporal analysis within the gait cycle. Our architecture treats each timestep as a separate token. A two-layer 1D convolutional stem first extracts local patterns (heel-strike, toe-off phases), then sinusoidal positional encodings are added so the model knows the ordering of timesteps. Two Transformer encoder layers then compute QKV attention scores, allowing the model to learn interactions across the full gait cycle, followed by a feed-forward network (GeLU activation, $4\times$ dimension expansion). We mean-pool the resulting token representations and pass them through layer normalisation and a linear layer that outputs 5 logits, one per activity class.\newline
+
+Training uses cross-entropy loss with label smoothing. Class imbalances (e.g.\ Swaying has roughly twice as many windows as Stepping) are handled by weighting the loss by inverse class frequency and using a weighted random sampler with the same inverse probabilities. We optimise with AdamW (decoupled weight decay). Five augmentation transforms (Gaussian jitter, per-channel scaling, channel dropout, temporal masking, random time shift) are applied during training to reduce overfitting to the small number of training subjects. All data splits are done at the file level so overlapping windows from the same recording never appear in both training and validation sets. Further architectural and training details are provided in Appendix~\ref{app:modelspec}. \newline
+
+For future model training, it would be best to increase the number of attention heads and increase dimensionality of models, assuming there is much more available training data. Current data is limited to 4 sessions, and there is a mismatch in frequency causing trouble in the classifier.
+
+The main parameters used: window size = \textbf{80} (1.33\,s at 60\,Hz), stride = \textbf{30}, batch size = \textbf{64}, max epochs = \textbf{150}, patience = \textbf{80}, learning rate = \textbf{$5 \times 10^{-4}$}, $d_{\text{model}}$ = \textbf{32}, \textbf{2} attention heads, \textbf{2} encoder layers, dropout = \textbf{0.3}.
+
+\begin{table}[H]
+\centering
+\scriptsize
+\begin{tabular}{p{1.55cm} p{1.5cm} p{0.9cm} p{2.9cm}}
+\toprule
+\textbf{Parameter} & \textbf{What we tried} & \textbf{Final} & \textbf{Why we kept final choice} \\
+\midrule
+Window size $W$ & 50, 80 & \textbf{80} & Captures around a full gait cycle and improved class separation for temporally similar classes. \\
+Stride $S$ & 10, 20, 30 & \textbf{30} & Better compute vs overlap trade-off while keeping enough windows. \\
+$d_{\text{model}}$ & 32, 64 & \textbf{32} & Smaller embedding reduced overfitting with limited subjects and kept training stable. \\
+Heads / FFN & 2/128, 4/256 & \textbf{2/128} & Similar validation, lower complexity. \\
+Dropout & 0.1, 0.3 & \textbf{0.3} & More stable validation on unseen files. \\
+Mixup $\alpha$ & 0.0, 0.2 & \textbf{0.2} & Slight validation gain on this run. \\
+\bottomrule
+\end{tabular}
+\caption{Main hyperparameter choices, alternatives tested, and final rationale.}
+\label{tab:param_choices}
+\end{table}
+
+\begin{table}[H]
+\centering
+\scriptsize
+\begin{tabular}{l l}
+\toprule
+\textbf{Validation Metric} & \textbf{Value} \\
+\midrule
+Best epoch & 29 / 150 \\
+Train loss / accuracy & 0.7036 / 55.83\% \\
+Val loss / accuracy & 0.6154 / 93.29\% \\
+Macro precision & 0.88 \\
+Macro recall & 0.85 \\
+Macro F1 & 0.85 \\
+Weighted F1 & 0.92 \\
+Validation support & 1864 windows \\
+\bottomrule
+\end{tabular}
+\caption{Best validation run summary and final metrics.}
+\label{tab:best_val_summary}
+\end{table}
+
+\begin{table}[H]
+\centering
+\scriptsize
+\begin{tabular}{lcccc}
+\toprule
+\textbf{Class} & \textbf{P} & \textbf{R} & \textbf{F1} & \textbf{n} \\
+\midrule
+Normal\_walking & 0.82 & 0.98 & 0.89 & 295 \\
+Injury\_walking & 0.96 & 1.00 & 0.98 & 401 \\
+Stepping & 0.68 & 0.30 & 0.41 & 131 \\
+Swaying & 0.99 & 0.96 & 0.98 & 741 \\
+Jumping & 0.94 & 1.00 & 0.97 & 296 \\
+\bottomrule
+\end{tabular}
+\caption{Per-class validation metrics at the best checkpoint (Val accuracy 93.29\%).}
+\label{tab:per_class_results}
+\end{table}
+
+\noindent\textbf{Result interpretation.} The main weakness is Stepping recall (0.30), while other classes are strong (F1 0.89 to 0.98), this is because of limited data for this class. The relatively low train accuracy (55.83\%) is expected with mixup because labels are blended during optimisation. In this setting, validation metrics are more informative than hard-label train accuracy.
+
+\noindent\textbf{Reproducibility.} Code: \href{https://github.com/sebinkooooo/mech.git}{github.com/sebinkooooo/mech}. Training run: \href{https://drive.google.com/file/d/1iLZLUPbs637IBlTrdomt-Pahzhj9ZaGV/view?usp=sharing}{Google Drive notebook}. The full implementation used in this report is included in Appendix~\ref{app:code}.
+
+\noindent\textbf{Appendix note.} Appendix~\ref{app:modelspec} and Appendix~\ref{app:code} begin on the next page.
+
+\appendix
+\onecolumn
+\section*{Appendix}
+\section{Model Specification (condensed more on github /paper)}
+\label{app:modelspec}
+
+\subsection*{A.1 Input and preprocessing}
+Each sample is a window of shape $80 \times 48$:
+\begin{itemize}[leftmargin=1.2em]
+\item 48 features per timestep = 24 per foot.
+\item Per foot: 18 pressure sensors (\texttt{ele\_0} to \texttt{ele\_17}), 3 accelerometer axes (\texttt{ele\_18}, \texttt{ele\_19}, \texttt{ele\_20}), and 3 Euler orientation angles (\texttt{ele\_22}, \texttt{ele\_23}, \texttt{ele\_24}).
+\item Left and right streams are merged by nearest timestamp match ($\delta t < 0.02$\,s), then resampled to \SI{60}{Hz}.
+\item Sliding windows use $W=80$, stride $S=30$ (62.5\% overlap).
+\item Normalisation is two-stage: global z-score (fit on train only), then per-window z-score.
+\end{itemize}
+
+\subsection*{A.2 Exact TGT architecture}
+The final classifier is a CNN-Transformer hybrid:
+\begin{itemize}[leftmargin=1.2em]
+\item \textbf{Input:} $(B, 80, 48)$.
+\item \textbf{Conv stem:} two 1D conv blocks along time:
+  \begin{itemize}
+  \item Conv1d($48 \rightarrow 32$, kernel 7, padding 3) + BatchNorm + GELU + Dropout(0.3)
+  \item Conv1d($32 \rightarrow 32$, kernel 5, padding 2) + BatchNorm + GELU + Dropout(0.3)
+  \end{itemize}
+\item \textbf{Positional encoding:} fixed sinusoidal encoding added to each of the 80 tokens.
+\item \textbf{Transformer encoder:} 2 layers, 2 heads, $d_{\text{model}}=32$, FFN hidden size $128$, activation GELU, dropout 0.3.
+\item \textbf{Sequence aggregation:} mean pooling across all 80 token outputs (no CLS token).
+\item \textbf{Head:} LayerNorm(32) + Dropout(0.3) + Linear($32 \rightarrow 5$ logits).
+\end{itemize}
+
+\subsection*{A.3 Training configuration and key choices}
+\begin{itemize}[leftmargin=1.2em]
+\item \textbf{Loss:} cross-entropy with class weights (inverse class frequency) and label smoothing 0.1.
+\item \textbf{Sampler:} WeightedRandomSampler to oversample minority classes.
+\item \textbf{Optimiser:} AdamW, learning rate $5\times10^{-4}$, weight decay $10^{-3}$.
+\item \textbf{Schedule:} cosine annealing over 150 epochs; early stopping patience 80.
+\item \textbf{Stability:} gradient clipping (max norm 1.0).
+\item \textbf{Augmentation:} Gaussian jitter (std 0.15), per-channel scaling [0.5, 1.5], channel dropout (0.2), temporal masking (up to $W/7$), and random circular time shift (up to $\pm W/8$).
+\item \textbf{Mixup:} $\alpha=0.2$ for the training run attached in this report.
+\item \textbf{Split strategy:} file-level train/validation split to prevent leakage from overlapping windows.
+\end{itemize}
+
+\section{Full Source Code (functions)}
+\label{app:code}
+\lstset{style=pythonstyle}
+\lstinputlisting{sebi_v2_appendix.py}
+
+
+\end{document}
